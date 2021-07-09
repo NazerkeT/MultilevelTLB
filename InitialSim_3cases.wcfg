@@ -1,0 +1,260 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wave_config>
+   <wave_state>
+   </wave_state>
+   <db_ref_list>
+      <db_ref path="tlb_l2_behav.wdb" id="1">
+         <top_modules>
+            <top_module name="ariane_pkg" />
+            <top_module name="glbl" />
+            <top_module name="riscv" />
+            <top_module name="tlb_l2" />
+         </top_modules>
+      </db_ref>
+   </db_ref_list>
+   <zoom_setting>
+      <ZoomStartTime time="2035000000fs"></ZoomStartTime>
+      <ZoomEndTime time="3793000001fs"></ZoomEndTime>
+      <Cursor1Time time="3500000000fs"></Cursor1Time>
+   </zoom_setting>
+   <column_width_setting>
+      <NameColumnWidth column_width="233"></NameColumnWidth>
+      <ValueColumnWidth column_width="110"></ValueColumnWidth>
+   </column_width_setting>
+   <WVObjectSize size="35" />
+   <wvobject type="logic" fp_name="/tlb_l2/clk_i">
+      <obj_property name="ElementShortName">clk_i</obj_property>
+      <obj_property name="ObjectShortName">clk_i</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tlb_l2/rst_ni">
+      <obj_property name="ElementShortName">rst_ni</obj_property>
+      <obj_property name="ObjectShortName">rst_ni</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tlb_l2/flush_i">
+      <obj_property name="ElementShortName">flush_i</obj_property>
+      <obj_property name="ObjectShortName">flush_i</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/update_i">
+      <obj_property name="ElementShortName">update_i</obj_property>
+      <obj_property name="ObjectShortName">update_i</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tlb_l2/lu_access_i">
+      <obj_property name="ElementShortName">lu_access_i</obj_property>
+      <obj_property name="ObjectShortName">lu_access_i</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/lu_asid_i">
+      <obj_property name="ElementShortName">lu_asid_i[0:0]</obj_property>
+      <obj_property name="ObjectShortName">lu_asid_i[0:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/lu_vaddr_i">
+      <obj_property name="ElementShortName">lu_vaddr_i[63:0]</obj_property>
+      <obj_property name="ObjectShortName">lu_vaddr_i[63:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/lu_content_o">
+      <obj_property name="ElementShortName">lu_content_o</obj_property>
+      <obj_property name="ObjectShortName">lu_content_o</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/asid_to_be_flushed_i">
+      <obj_property name="ElementShortName">asid_to_be_flushed_i[0:0]</obj_property>
+      <obj_property name="ObjectShortName">asid_to_be_flushed_i[0:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/vaddr_to_be_flushed_i">
+      <obj_property name="ElementShortName">vaddr_to_be_flushed_i[63:0]</obj_property>
+      <obj_property name="ObjectShortName">vaddr_to_be_flushed_i[63:0]</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tlb_l2/lu_is_2M_o">
+      <obj_property name="ElementShortName">lu_is_2M_o</obj_property>
+      <obj_property name="ObjectShortName">lu_is_2M_o</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tlb_l2/lu_is_1G_o">
+      <obj_property name="ElementShortName">lu_is_1G_o</obj_property>
+      <obj_property name="ObjectShortName">lu_is_1G_o</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tlb_l2/lu_hit_o">
+      <obj_property name="ElementShortName">lu_hit_o</obj_property>
+      <obj_property name="ObjectShortName">lu_hit_o</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/tags_q">
+      <obj_property name="ElementShortName">tags_q[7:0][1:0]</obj_property>
+      <obj_property name="ObjectShortName">tags_q[7:0][1:0]</obj_property>
+      <obj_property name="isExpanded"></obj_property>
+      <wvobject type="array" fp_name="/tlb_l2/tags_q[7]">
+         <obj_property name="ElementShortName">[7][1:0]</obj_property>
+         <obj_property name="ObjectShortName">[7][1:0]</obj_property>
+         <obj_property name="isExpanded"></obj_property>
+      </wvobject>
+      <wvobject type="array" fp_name="/tlb_l2/tags_q[6]">
+         <obj_property name="ElementShortName">[6][1:0]</obj_property>
+         <obj_property name="ObjectShortName">[6][1:0]</obj_property>
+      </wvobject>
+      <wvobject type="array" fp_name="/tlb_l2/tags_q[5]">
+         <obj_property name="ElementShortName">[5][1:0]</obj_property>
+         <obj_property name="ObjectShortName">[5][1:0]</obj_property>
+      </wvobject>
+      <wvobject type="array" fp_name="/tlb_l2/tags_q[4]">
+         <obj_property name="ElementShortName">[4][1:0]</obj_property>
+         <obj_property name="ObjectShortName">[4][1:0]</obj_property>
+         <obj_property name="isExpanded"></obj_property>
+      </wvobject>
+      <wvobject type="array" fp_name="/tlb_l2/tags_q[3]">
+         <obj_property name="ElementShortName">[3][1:0]</obj_property>
+         <obj_property name="ObjectShortName">[3][1:0]</obj_property>
+      </wvobject>
+      <wvobject type="array" fp_name="/tlb_l2/tags_q[2]">
+         <obj_property name="ElementShortName">[2][1:0]</obj_property>
+         <obj_property name="ObjectShortName">[2][1:0]</obj_property>
+         <obj_property name="isExpanded"></obj_property>
+         <wvobject type="array" fp_name="/tlb_l2/tags_q[2][1]">
+            <obj_property name="ElementShortName">[1]</obj_property>
+            <obj_property name="ObjectShortName">[1]</obj_property>
+         </wvobject>
+         <wvobject type="array" fp_name="/tlb_l2/tags_q[2][0]">
+            <obj_property name="ElementShortName">[0]</obj_property>
+            <obj_property name="ObjectShortName">[0]</obj_property>
+            <obj_property name="isExpanded"></obj_property>
+         </wvobject>
+      </wvobject>
+      <wvobject type="array" fp_name="/tlb_l2/tags_q[1]">
+         <obj_property name="ElementShortName">[1][1:0]</obj_property>
+         <obj_property name="ObjectShortName">[1][1:0]</obj_property>
+      </wvobject>
+      <wvobject type="array" fp_name="/tlb_l2/tags_q[0]">
+         <obj_property name="ElementShortName">[0][1:0]</obj_property>
+         <obj_property name="ObjectShortName">[0][1:0]</obj_property>
+      </wvobject>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/tags_n">
+      <obj_property name="ElementShortName">tags_n[7:0][1:0]</obj_property>
+      <obj_property name="ObjectShortName">tags_n[7:0][1:0]</obj_property>
+      <obj_property name="isExpanded"></obj_property>
+      <wvobject type="array" fp_name="/tlb_l2/tags_n[7]">
+         <obj_property name="ElementShortName">[7][1:0]</obj_property>
+         <obj_property name="ObjectShortName">[7][1:0]</obj_property>
+         <obj_property name="isExpanded"></obj_property>
+      </wvobject>
+      <wvobject type="array" fp_name="/tlb_l2/tags_n[6]">
+         <obj_property name="ElementShortName">[6][1:0]</obj_property>
+         <obj_property name="ObjectShortName">[6][1:0]</obj_property>
+      </wvobject>
+      <wvobject type="array" fp_name="/tlb_l2/tags_n[5]">
+         <obj_property name="ElementShortName">[5][1:0]</obj_property>
+         <obj_property name="ObjectShortName">[5][1:0]</obj_property>
+      </wvobject>
+      <wvobject type="array" fp_name="/tlb_l2/tags_n[4]">
+         <obj_property name="ElementShortName">[4][1:0]</obj_property>
+         <obj_property name="ObjectShortName">[4][1:0]</obj_property>
+         <obj_property name="isExpanded"></obj_property>
+      </wvobject>
+      <wvobject type="array" fp_name="/tlb_l2/tags_n[3]">
+         <obj_property name="ElementShortName">[3][1:0]</obj_property>
+         <obj_property name="ObjectShortName">[3][1:0]</obj_property>
+      </wvobject>
+      <wvobject type="array" fp_name="/tlb_l2/tags_n[2]">
+         <obj_property name="ElementShortName">[2][1:0]</obj_property>
+         <obj_property name="ObjectShortName">[2][1:0]</obj_property>
+      </wvobject>
+      <wvobject type="array" fp_name="/tlb_l2/tags_n[1]">
+         <obj_property name="ElementShortName">[1][1:0]</obj_property>
+         <obj_property name="ObjectShortName">[1][1:0]</obj_property>
+      </wvobject>
+      <wvobject type="array" fp_name="/tlb_l2/tags_n[0]">
+         <obj_property name="ElementShortName">[0][1:0]</obj_property>
+         <obj_property name="ObjectShortName">[0][1:0]</obj_property>
+         <wvobject type="array" fp_name="/tlb_l2/tags_n[0][1]">
+            <obj_property name="ElementShortName">[1]</obj_property>
+            <obj_property name="ObjectShortName">[1]</obj_property>
+            <obj_property name="isExpanded"></obj_property>
+         </wvobject>
+         <wvobject type="array" fp_name="/tlb_l2/tags_n[0][0]">
+            <obj_property name="ElementShortName">[0]</obj_property>
+            <obj_property name="ObjectShortName">[0]</obj_property>
+            <obj_property name="isExpanded"></obj_property>
+         </wvobject>
+      </wvobject>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/content_q">
+      <obj_property name="ElementShortName">content_q[7:0][1:0]</obj_property>
+      <obj_property name="ObjectShortName">content_q[7:0][1:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/content_n">
+      <obj_property name="ElementShortName">content_n[7:0][1:0]</obj_property>
+      <obj_property name="ObjectShortName">content_n[7:0][1:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/vpn">
+      <obj_property name="ElementShortName">vpn[2:0][8:0]</obj_property>
+      <obj_property name="ObjectShortName">vpn[2:0][8:0]</obj_property>
+      <obj_property name="isExpanded"></obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/lu_hit">
+      <obj_property name="ElementShortName">lu_hit[7:0][1:0]</obj_property>
+      <obj_property name="ObjectShortName">lu_hit[7:0][1:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/replace_en">
+      <obj_property name="ElementShortName">replace_en[7:0][1:0]</obj_property>
+      <obj_property name="ObjectShortName">replace_en[7:0][1:0]</obj_property>
+      <obj_property name="isExpanded"></obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/ind">
+      <obj_property name="ElementShortName">ind[2:0]</obj_property>
+      <obj_property name="ObjectShortName">ind[2:0]</obj_property>
+      <obj_property name="Radix">UNSIGNEDDECRADIX</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/hash_ord_q">
+      <obj_property name="ElementShortName">hash_ord_q[1:0]</obj_property>
+      <obj_property name="ObjectShortName">hash_ord_q[1:0]</obj_property>
+      <obj_property name="Radix">UNSIGNEDDECRADIX</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/hash_ord_n">
+      <obj_property name="ElementShortName">hash_ord_n[1:0]</obj_property>
+      <obj_property name="ObjectShortName">hash_ord_n[1:0]</obj_property>
+      <obj_property name="Radix">UNSIGNEDDECRADIX</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tlb_l2/hit_flag">
+      <obj_property name="ElementShortName">hit_flag</obj_property>
+      <obj_property name="ObjectShortName">hit_flag</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tlb_l2/asid_to_be_flushed_is0">
+      <obj_property name="ElementShortName">asid_to_be_flushed_is0</obj_property>
+      <obj_property name="ObjectShortName">asid_to_be_flushed_is0</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tlb_l2/vaddr_to_be_flushed_is0">
+      <obj_property name="ElementShortName">vaddr_to_be_flushed_is0</obj_property>
+      <obj_property name="ObjectShortName">vaddr_to_be_flushed_is0</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/vaddr_vpn0_match">
+      <obj_property name="ElementShortName">vaddr_vpn0_match[7:0][1:0]</obj_property>
+      <obj_property name="ObjectShortName">vaddr_vpn0_match[7:0][1:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/vaddr_vpn1_match">
+      <obj_property name="ElementShortName">vaddr_vpn1_match[7:0][1:0]</obj_property>
+      <obj_property name="ObjectShortName">vaddr_vpn1_match[7:0][1:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/vaddr_vpn2_match">
+      <obj_property name="ElementShortName">vaddr_vpn2_match[7:0][1:0]</obj_property>
+      <obj_property name="ObjectShortName">vaddr_vpn2_match[7:0][1:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/plru_tree_q">
+      <obj_property name="ElementShortName">plru_tree_q[7:0][0:0]</obj_property>
+      <obj_property name="ObjectShortName">plru_tree_q[7:0][0:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/plru_tree_n">
+      <obj_property name="ElementShortName">plru_tree_n[7:0][0:0]</obj_property>
+      <obj_property name="ObjectShortName">plru_tree_n[7:0][0:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/TLB_SETS">
+      <obj_property name="ElementShortName">TLB_SETS[31:0]</obj_property>
+      <obj_property name="ObjectShortName">TLB_SETS[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/TLB_WAYS">
+      <obj_property name="ElementShortName">TLB_WAYS[31:0]</obj_property>
+      <obj_property name="ObjectShortName">TLB_WAYS[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/ASID_WIDTH">
+      <obj_property name="ElementShortName">ASID_WIDTH[31:0]</obj_property>
+      <obj_property name="ObjectShortName">ASID_WIDTH[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tlb_l2/PAGE_LEVELS">
+      <obj_property name="ElementShortName">PAGE_LEVELS[31:0]</obj_property>
+      <obj_property name="ObjectShortName">PAGE_LEVELS[31:0]</obj_property>
+   </wvobject>
+</wave_config>
