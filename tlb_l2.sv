@@ -59,32 +59,27 @@ module tlb_l2 import ariane_pkg::*; #(
     
     riscv::pte_t [TLB_SETS-1:0][TLB_WAYS-1:0] content_q, content_n;
     
-    logic [2:0][8:0] vpn;              // assumption of SV39 mode and VLEN = 64 as a default
+    logic [2:0][8:0] vpn;
     logic [TLB_SETS-1:0][TLB_WAYS-1:0] lu_hit;     
     logic [TLB_SETS-1:0][TLB_WAYS-1:0] replace_en; 
        
     //-------------
     // Translation
     //-------------
-    // might need to change these to ffs
-    assign vpn[0] = lu_vaddr_i[20:12];
-    assign vpn[1] = lu_vaddr_i[29:21];
-    assign vpn[2] = lu_vaddr_i[38:30];
+    // save vpns for later clock cycles
+    // assumption of SV39 mode and VLEN = 64 as a default
+    logic [2:0][8:0] vpn_q, vpn_n; 
+    
+    // these help to transfer input to logic in a single cycle
+    assign vpn[0] = (lu_access_i) ? lu_vaddr_i[20:12] : vpn_q[0]; 
+    assign vpn[1] = (lu_access_i) ? lu_vaddr_i[29:21] : vpn_q[1];
+    assign vpn[2] = (lu_access_i) ? lu_vaddr_i[38:30] : vpn_q[2];
     
     logic [`K-1:0] ind;                     // set index
     logic [1:0]    hash_ord_q, hash_ord_n;  // hash-rehash order
     logic          hit_flag;                // notifies order counter about hit
     
     assign ind = vpn[hash_ord_q][`K-1:0]; 
-    
-    // Update hash here
-    always_ff @(posedge clk_i or negedge rst_ni) begin
-        if (~rst_ni) begin
-            hash_ord_q <= 1'b0;        
-        end else begin
-            hash_ord_q <= hash_ord_n; 
-        end
-    end
     
     always_comb begin : translation        
         // default assignment
@@ -97,7 +92,8 @@ module tlb_l2 import ariane_pkg::*; #(
         
         hash_ord_n = hash_ord_q;
         hit_flag   = 1'b0;
-                    
+        vpn_n      = (lu_access_i) ? vpn : vpn_q;
+          
         if (lu_access_i || hash_ord_q > 0 ) begin
             for (int unsigned i = 0; i < TLB_WAYS; i++) begin                             
                 if (tags_q[ind][i].valid && ((lu_asid_i == tags_q[ind][i].asid) || content_q[ind][i].g) && vpn[2][8:`K] == tags_q[ind][i].vpn2[8:`K]) begin
@@ -126,12 +122,14 @@ module tlb_l2 import ariane_pkg::*; #(
             
             // avoid overflow for the last miss
             if (hit_flag) begin
+                vpn_n      = '0;
                 hash_ord_n = 1'b0;
                 all_hashes_checked_o = 1'b1; // validate hash check ahead of time if tlb hits
             end else begin
                 if (hash_ord_q < 'd2) begin
                     hash_ord_n += 1;
                 end else begin
+                    vpn_n      = '0;
                     hash_ord_n = 1'b0;
                     all_hashes_checked_o = 1'b1; // set once all hashes are checked
                 end
@@ -191,7 +189,7 @@ module tlb_l2 import ariane_pkg::*; #(
                                 valid: 1'b1
                             };
                             // and content as well
-                            content_n[i] = update_i.content;
+                            content_n[i][j] = update_i.content;
                         end
                     end
             end  
@@ -230,7 +228,7 @@ module tlb_l2 import ariane_pkg::*; #(
             for (int unsigned i = 0; i < TLB_WAYS; i++) begin
                 automatic int unsigned idx_base, shift, new_index;
                 // we got a hit so update the pointer as it was least recently used
-                if (lu_hit[ind][i] & lu_access_i) begin
+                if (lu_hit[ind][i] & all_hashes_checked_o) begin
                     // Set the nodes to the values we would expect
                     for (int unsigned lvl = 0; lvl < $clog2(TLB_WAYS); lvl++) begin
                       idx_base = $unsigned((2**lvl)-1);
@@ -256,25 +254,30 @@ module tlb_l2 import ariane_pkg::*; #(
             // For each entry traverse the tree. If every tree-node matches,
             // the corresponding bit of the entry's index, this is
             // the next entry to replace.
-            for (int unsigned i = 0; i < TLB_WAYS; i += 1) begin
-                automatic logic en;
-                automatic int unsigned idx_base, shift, new_index;
-                en = 1'b1;
-                for (int unsigned lvl = 0; lvl < $clog2(TLB_WAYS); lvl++) begin
-                    idx_base = $unsigned((2**lvl)-1);
-                    // lvl0 <=> MSB, lvl1 <=> MSB-1, ...
-                    shift = $clog2(TLB_WAYS) - lvl;
-    
-                    // en &= plru_tree_q[idx_base + (i>>shift)] == ((i >> (shift-1)) & 1'b1);
-                    new_index =  (i >> (shift-1)) & 32'b1;
-                    if (new_index[0]) begin
-                      en &= plru_tree_q[ind][idx_base + (i>>shift)];
-                    end else begin
-                      en &= ~plru_tree_q[ind][idx_base + (i>>shift)];
+            
+            // This is a bit awful, but helps to keep replace enable result in the same cycle with plru tree update
+            for (int unsigned i = 0; i < TLB_SETS; i++) begin
+                for (int unsigned j = 0; j < TLB_WAYS; j ++) begin
+                    automatic logic en;
+                    automatic int unsigned idx_base, shift, new_index;
+                    en = 1'b1;
+                    for (int unsigned lvl = 0; lvl < $clog2(TLB_WAYS); lvl++) begin
+                        idx_base = $unsigned((2**lvl)-1);
+                        // lvl0 <=> MSB, lvl1 <=> MSB-1, ...
+                        shift = $clog2(TLB_WAYS) - lvl;
+        
+                        // en &= plru_tree_q[idx_base + (i>>shift)] == ((i >> (shift-1)) & 1'b1);
+                        new_index =  (j >> (shift-1)) & 32'b1;
+                        if (new_index[0]) begin
+                          en &= plru_tree_q[i][idx_base + (j >> shift)];
+                        end else begin
+                          en &= ~plru_tree_q[i][idx_base + (j >> shift)];
+                        end
                     end
+                    replace_en[i][j] = en;
                 end
-                replace_en[ind][i] = en;
             end
+            
         end
         
     // sequential process
@@ -283,10 +286,14 @@ module tlb_l2 import ariane_pkg::*; #(
             tags_q      <= '{default: 0}; 
             content_q   <= '{default: 0};
             plru_tree_q <= '{default: 0};
+            vpn_q       <= '{default: 0};
+            hash_ord_q  <= 1'b0;
         end else begin
             tags_q      <= tags_n;
             content_q   <= content_n;
             plru_tree_q <= plru_tree_n;
+            vpn_q       <= vpn_n;
+            hash_ord_q  <= hash_ord_n;
         end
     end
     
