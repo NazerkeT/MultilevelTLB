@@ -5,7 +5,7 @@ Multilevel Translation Lookaside Buffer (TLB) implementation workspace for (CVA6
 Generalized tasks:
 *   L2 TLB design (done);
 *   Integrating L2 TLB to MMU (ongoing);
-*   RTL simulations in Vivado (ongoing);
+*   Module level simulations (ongoing);
 *   Updating Load Store Unit (LSU);
 *   Updating Instruction Cache Interface;
 *   Other core level changes; 
