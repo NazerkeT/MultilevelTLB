@@ -143,36 +143,11 @@ module mmu import ariane_pkg::*; #(
     // L2 TLB Input
     tlb_update_t update_ptw;
     // L2 TLB Outputs
-    logic lu_access;
     logic tlb_is_2M, tlb_is_1G;
     logic tlb_lu_hit;
     riscv::pte_t tlb_content;
     
-    // l2 tlb to itlb, dtlb interface
-    // transferring inputs in a single cycle with hit
-    assign lu_access = ((itlb_lu_access & !itlb_lu_hit) || (dtlb_lu_access & !dtlb_lu_hit)) ? 1'b1 : 1'b0;
-    
-    // PTW Inputs
-    logic itlb_access_q, itlb_access_n;
-    logic dtlb_access_q, dtlb_access_n;
-          
-    always_comb begin : tlb_l2_interface
-        itlb_access_n = itlb_access_q;
-        dtlb_access_n = dtlb_access_q;
-        
-        // saving itlb and dtlb access for ptw after l2tlb 
-        if (itlb_lu_access & ~itlb_lu_hit) begin
-            itlb_access_n = 1'b1;
-        end else if (all_hashes_checked) begin
-            itlb_access_n = 1'b0;
-        end
-        
-        if (dtlb_lu_access & ~dtlb_lu_hit) begin
-            dtlb_access_n = 1'b1;
-        end else if (all_hashes_checked) begin
-            dtlb_access_n = 1'b0;
-        end        
-                    
+    always_comb begin : tlb_l2_interface                   
         // ptw interface
         if (update_ptw_itlb.valid) begin
             update_ptw = update_ptw_itlb;
@@ -191,7 +166,7 @@ module mmu import ariane_pkg::*; #(
 
          .update_i         ( update_ptw                  ),
 
-         .lu_access_i      ( lu_access                   ),
+         .lu_access_i      ( itlb_lu_access || dtlb_lu_access ),
          .lu_asid_i        ( asid_i                      ),
 	     .asid_to_be_flushed_i  ( asid_to_be_flushed_i   ),
 	     .vaddr_to_be_flushed_i ( vaddr_to_be_flushed_i  ),
@@ -220,11 +195,11 @@ module mmu import ariane_pkg::*; #(
         .itlb_update_o          ( update_ptw_itlb       ),
         .dtlb_update_o          ( update_ptw_dtlb       ),
 
-        .itlb_access_i          ( itlb_access_q         ),
+        .itlb_access_i          ( itlb_lu_access         ),
         .itlb_hit_i             ( tlb_lu_hit            ),
         .itlb_vaddr_i           ( icache_areq_i.fetch_vaddr ),
 
-        .dtlb_access_i          ( dtlb_access_q         ),
+        .dtlb_access_i          ( dtlb_lu_access         ),
         .dtlb_hit_i             ( tlb_lu_hit            ),
         .dtlb_vaddr_i           ( lsu_vaddr_i           ),
 

@@ -59,21 +59,17 @@ module tlb_l2 import ariane_pkg::*; #(
     
     riscv::pte_t [TLB_SETS-1:0][TLB_WAYS-1:0] content_q, content_n;
     
-    logic [2:0][8:0] vpn;
+    logic [2:0][8:0] vpn;   // assumption of SV39 mode and VLEN = 64 as a default
     logic [TLB_SETS-1:0][TLB_WAYS-1:0] lu_hit;     
     logic [TLB_SETS-1:0][TLB_WAYS-1:0] replace_en; 
        
     //-------------
     // Translation
     //-------------
-    // save vpns for later clock cycles
-    // assumption of SV39 mode and VLEN = 64 as a default
-    logic [2:0][8:0] vpn_q, vpn_n; 
-    
     // these help to transfer input to logic in a single cycle
-    assign vpn[0] = (lu_access_i) ? lu_vaddr_i[20:12] : vpn_q[0]; 
-    assign vpn[1] = (lu_access_i) ? lu_vaddr_i[29:21] : vpn_q[1];
-    assign vpn[2] = (lu_access_i) ? lu_vaddr_i[38:30] : vpn_q[2];
+    assign vpn[0] = lu_vaddr_i[20:12];
+    assign vpn[1] = lu_vaddr_i[29:21];
+    assign vpn[2] = lu_vaddr_i[38:30];
     
     logic [`K-1:0] ind;                     // set index
     logic [1:0]    hash_ord_q, hash_ord_n;  // hash-rehash order
@@ -92,9 +88,8 @@ module tlb_l2 import ariane_pkg::*; #(
         
         hash_ord_n = hash_ord_q;
         hit_flag   = 1'b0;
-        vpn_n      = (lu_access_i) ? vpn : vpn_q;
-          
-        if (lu_access_i || hash_ord_q > 0 ) begin
+                  
+        if (lu_access_i) begin
             for (int unsigned i = 0; i < TLB_WAYS; i++) begin                             
                 if (tags_q[ind][i].valid && ((lu_asid_i == tags_q[ind][i].asid) || content_q[ind][i].g) && vpn[2][8:`K] == tags_q[ind][i].vpn2[8:`K]) begin
                     if (tags_q[ind][i].is_1G) begin
@@ -122,14 +117,12 @@ module tlb_l2 import ariane_pkg::*; #(
             
             // avoid overflow for the last miss
             if (hit_flag) begin
-                vpn_n      = '0;
                 hash_ord_n = 1'b0;
                 all_hashes_checked_o = 1'b1; // validate hash check ahead of time if tlb hits
             end else begin
                 if (hash_ord_q < 'd2) begin
                     hash_ord_n += 1;
                 end else begin
-                    vpn_n      = '0;
                     hash_ord_n = 1'b0;
                     all_hashes_checked_o = 1'b1; // set once all hashes are checked
                 end
@@ -286,13 +279,11 @@ module tlb_l2 import ariane_pkg::*; #(
             tags_q      <= '{default: 0}; 
             content_q   <= '{default: 0};
             plru_tree_q <= '{default: 0};
-            vpn_q       <= '{default: 0};
             hash_ord_q  <= 1'b0;
         end else begin
             tags_q      <= tags_n;
             content_q   <= content_n;
             plru_tree_q <= plru_tree_n;
-            vpn_q       <= vpn_n;
             hash_ord_q  <= hash_ord_n;
         end
     end
