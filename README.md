@@ -1,8 +1,9 @@
 # Multilevel TLB
 
 Multilevel Translation Lookaside Buffer (TLB) implementation workspace for (CVA6) Ariane Core.
+More is to come, keep tuned! ;)
 
-Generalized tasks:
+General tasks:
 *   L2 TLB design (done);
 *   Integrating L2 TLB to MMU (ongoing);
 *   Module level simulations (ongoing);
@@ -21,4 +22,3 @@ Useful links:
 *   A. Bhattacharjee, D. Lustig, 2017. _Architectural and Operating System Support for Virtual Memory, Synthesis Lectures on Computer Architecture_, https://doi.org/10.2200/S00795ED1V01Y201708CAC042
 *   A. Silberschatz, P. B. Galvin, G. Gagne, 2013. _Operating System Concepts_, 9th Edition.
 
-More is to come, keep tuned :)
