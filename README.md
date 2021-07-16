@@ -6,10 +6,13 @@ Generalized tasks:
 *   L2 TLB design (done);
 *   Integrating L2 TLB to MMU (ongoing);
 *   Module level simulations (ongoing);
-*   Updating Load Store Unit (LSU);
+*   Updating PTW (ongoing);
+*   Updating Load Store Unit (LSU) (ongoing);
 *   Updating Instruction Cache Interface;
 *   Other core level changes; 
 *   Core level simulations;
+*   *Queue between L1 and L2 TLBs, in case double translations are requested in single cycle;
+*   FSM based implementation of L2 TLB flush logic;
 
 Useful links:
 *   GitHub page of the core: https://github.com/openhwgroup/cva6
