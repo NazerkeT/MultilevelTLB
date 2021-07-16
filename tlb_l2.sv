@@ -66,7 +66,6 @@ module tlb_l2 import ariane_pkg::*; #(
     //-------------
     // Translation
     //-------------
-    // these help to transfer input to logic in a single cycle
     assign vpn[0] = lu_vaddr_i[20:12];
     assign vpn[1] = lu_vaddr_i[29:21];
     assign vpn[2] = lu_vaddr_i[38:30];
@@ -89,7 +88,7 @@ module tlb_l2 import ariane_pkg::*; #(
         hash_ord_n = hash_ord_q;
         hit_flag   = 1'b0;
                   
-        if (lu_access_i) begin
+        if (lu_access_i & ~l1_tlb_hit_i) begin
             for (int unsigned i = 0; i < TLB_WAYS; i++) begin                             
                 if (tags_q[ind][i].valid && ((lu_asid_i == tags_q[ind][i].asid) || content_q[ind][i].g) && vpn[2][8:`K] == tags_q[ind][i].vpn2[8:`K]) begin
                     if (tags_q[ind][i].is_1G) begin
