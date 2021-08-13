@@ -34,12 +34,12 @@ module tlb_l2 import ariane_pkg::*; #(
     input  logic                    lu_access_i,
     input  logic [ASID_WIDTH-1:0]   lu_asid_i,
     input  logic [riscv::VLEN-1:0]  lu_vaddr_i,
-    output riscv::pte_t             tlb_content_o,
+    output riscv::pte_t             lu_content_o,
     input  logic [ASID_WIDTH-1:0]   asid_to_be_flushed_i,
     input  logic [riscv::VLEN-1:0]  vaddr_to_be_flushed_i,
-    output logic                    tlb_is_2M_o,
-    output logic                    tlb_is_1G_o,
-    output logic                    tlb_hit_o,
+    output logic                    lu_is_2M_o,
+    output logic                    lu_is_1G_o,
+    output logic                    lu_hit_o,
     output logic                    all_hashes_checked_o
 );
     
@@ -79,22 +79,22 @@ module tlb_l2 import ariane_pkg::*; #(
     always_comb begin : translation        
         // default assignment
         lu_hit        = '{default: 0};
-        tlb_hit_o     = 1'b0;
-        tlb_content_o = '{default: 0};
-        tlb_is_1G_o   = 1'b0;
-        tlb_is_2M_o   = 1'b0;
+        lu_hit_o     = 1'b0;
+        lu_content_o = '{default: 0};
+        lu_is_1G_o   = 1'b0;
+        lu_is_2M_o   = 1'b0;
         all_hashes_checked_o = 1'b0;
         
         hash_ord_n = hash_ord_q;
         hit_flag   = 1'b0;
                   
-        if (lu_access_i & ~l1_tlb_hit_i) begin
+        if (lu_access_i) begin
             for (int unsigned i = 0; i < TLB_WAYS; i++) begin                             
                 if (tags_q[ind][i].valid && ((lu_asid_i == tags_q[ind][i].asid) || content_q[ind][i].g) && vpn[2][8:`K] == tags_q[ind][i].vpn2[8:`K]) begin
                     if (tags_q[ind][i].is_1G) begin
-                        tlb_is_1G_o   = 1'b1;
-                        tlb_content_o = content_q[ind][i];
-                        tlb_hit_o     = 1'b1;
+                        lu_is_1G_o   = 1'b1;
+                        lu_content_o = content_q[ind][i];
+                        lu_hit_o     = 1'b1;
                         lu_hit[ind][i] = 1'b1;
                         
                         hit_flag = 1'b1;
@@ -103,9 +103,9 @@ module tlb_l2 import ariane_pkg::*; #(
                         // this could be a 2 mega page hit or a 4 kB hit
                         // output accordingly
                         if (tags_q[ind][i].is_2M || vpn[0][8:`K] == tags_q[ind][i].vpn0[8:`K]) begin
-                            tlb_is_2M_o   = tags_q[ind][i].is_2M;
-                            tlb_content_o = content_q[ind][i];
-                            tlb_hit_o     = 1'b1;
+                            lu_is_2M_o   = tags_q[ind][i].is_2M;
+                            lu_content_o = content_q[ind][i];
+                            lu_hit_o     = 1'b1;
                             lu_hit[ind][i] = 1'b1;
                             
                             hit_flag = 1'b1;

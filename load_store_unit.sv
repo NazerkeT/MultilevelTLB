@@ -131,36 +131,36 @@ module load_store_unit import ariane_pkg::*; #(
     // -------------------
     // MMU e.g.: TLBs/PTW
     // -------------------
-    mmu #(
-        .INSTR_TLB_ENTRIES      ( 16                     ),
-        .DATA_TLB_ENTRIES       ( 16                     ),
-        .ASID_WIDTH             ( ASID_WIDTH             ),
-        .ArianeCfg              ( ArianeCfg              )
-    ) i_mmu (
-        // misaligned bypass
-        .misaligned_ex_i        ( misaligned_exception   ),
-        .lsu_is_store_i         ( st_translation_req     ),
-        .lsu_req_i              ( translation_req        ),
-        .lsu_vaddr_i            ( mmu_vaddr              ),
-        .lsu_valid_o            ( translation_valid      ),
-        .lsu_paddr_o            ( mmu_paddr              ),
-        .lsu_exception_o        ( mmu_exception          ),
-        .lsu_dtlb_hit_o         ( dtlb_hit               ), // send in the same cycle as the request
-        .lsu_dtlb_ppn_o         ( dtlb_ppn               ), // send in the same cycle as the request
-        // multi-level tlb lookup completion
-        .all_tlbs_checked_o     ( all_tlbs_checked       ),                         
-        // connecting PTW to D$ IF
-        .req_port_i             ( dcache_req_ports_i [0] ),
-        .req_port_o             ( dcache_req_ports_o [0] ),
-        // icache address translation requests
-        .icache_areq_i          ( icache_areq_i          ),
-        .asid_to_be_flushed_i,
-        .vaddr_to_be_flushed_i,
-        .icache_areq_o          ( icache_areq_o          ),
-        .pmpcfg_i,
-        .pmpaddr_i,
-        .*
-    );
+//    mmu #(
+//        .INSTR_TLB_ENTRIES      ( 16                     ),
+//        .DATA_TLB_ENTRIES       ( 16                     ),
+//        .ASID_WIDTH             ( ASID_WIDTH             ),
+//        .ArianeCfg              ( ArianeCfg              )
+//    ) i_mmu (
+//        // misaligned bypass
+//        .misaligned_ex_i        ( misaligned_exception   ),
+//        .lsu_is_store_i         ( st_translation_req     ),
+//        .lsu_req_i              ( translation_req        ),
+//        .lsu_vaddr_i            ( mmu_vaddr              ),
+//        .lsu_valid_o            ( translation_valid      ),
+//        .lsu_paddr_o            ( mmu_paddr              ),
+//        .lsu_exception_o        ( mmu_exception          ),
+//        .lsu_dtlb_hit_o         ( dtlb_hit               ), // send in the same cycle as the request
+//        .lsu_dtlb_ppn_o         ( dtlb_ppn               ), // send in the same cycle as the request
+//        // multi-level tlb lookup completion
+//        .all_tlbs_checked_o     ( all_tlbs_checked       ),                         
+//        // connecting PTW to D$ IF
+//        .req_port_i             ( dcache_req_ports_i [0] ),
+//        .req_port_o             ( dcache_req_ports_o [0] ),
+//        // icache address translation requests
+//        .icache_areq_i          ( icache_areq_i          ),
+//        .asid_to_be_flushed_i,
+//        .vaddr_to_be_flushed_i,
+//        .icache_areq_o          ( icache_areq_o          ),
+//        .pmpcfg_i,
+//        .pmpaddr_i,
+//        .*
+//    );
     logic store_buffer_empty;
     // ------------------
     // Store Unit

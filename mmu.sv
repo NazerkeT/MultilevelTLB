@@ -109,33 +109,10 @@ module mmu import ariane_pkg::*; #(
     assign l2_tlb_vaddr_i = (itlb_lu_access) ? icache_areq_i.fetch_vaddr : lsu_vaddr_i;
     
     assign all_tlbs_checked_o = all_hashes_checked; // output assignment
-    
-    // Update tlbs depending on hits/misses
-    always_comb begin : tlb_interface
-        update_itlb   = '0;
-        update_dtlb   = '0;
-        update_l2_tlb = '0;
-        
-        // itlb to tlb to ptw interface
-        if (!itlb_lu_hit && all_hashes_checked && tlb_lu_hit) begin
-            update_itlb = tlb_content;
-        end else if (itlb_lu_hit && all_hashes_checked && !tlb_lu_hit) begin
-            update_l2_tlb = itlb_content;
-        end else if (!itlb_lu_hit && all_hashes_checked && !tlb_lu_hit) begin
-            update_l2_tlb  = update_ptw_itlb;
-            update_itlb = update_ptw_itlb;        
-        end
-        
-        // dtlb to tlb to ptw interface
-        if (!dtlb_lu_hit && all_hashes_checked && tlb_lu_hit) begin
-            update_dtlb = tlb_content;
-        end else if (dtlb_lu_hit && all_hashes_checked && !tlb_lu_hit) begin
-            update_l2_tlb = dtlb_content;
-        end else if (!dtlb_lu_hit && all_hashes_checked && !tlb_lu_hit) begin
-            update_l2_tlb  = update_ptw_dtlb;
-            update_dtlb = update_ptw_dtlb;        
-        end        
-    end
+    // Update tlbs
+    assign update_itlb   = (!itlb_lu_hit && tlb_lu_hit)  ? tlb_content : update_ptw_itlb;
+    assign update_dtlb   = (!dtlb_lu_hit && tlb_lu_hit)  ? tlb_content : update_ptw_dtlb;
+    assign update_l2_tlb = (!itlb_lu_hit && !tlb_lu_hit) ? update_ptw_itlb : update_ptw_dtlb;
     
     tlb #(
         .TLB_ENTRIES      ( INSTR_TLB_ENTRIES          ),
@@ -202,6 +179,7 @@ module mmu import ariane_pkg::*; #(
      );
     
     // Multiplex between different tlbs before feeding to MMU checks
+    // Update only if both tlbs miss
     // *might change this later for possible single cycle, double request cases
     assign tlb_lu_hit = itlb_lu_hit || dtlb_lu_hit || l2_tlb_lu_hit;
     assign tlb_is_2M  = itlb_is_2M  || dtlb_is_2M  || l2_tlb_is_2M;
@@ -209,9 +187,9 @@ module mmu import ariane_pkg::*; #(
     
     // Multiplexing over right content
     always_comb begin : tlb_to_mmu_interface
-        if (itlb_lu_access && itlb_lu_hit) begin
+        if (itlb_lu_hit) begin
             tlb_content = itlb_content;           
-        end else if(dtlb_lu_access && dtlb_lu_hit) begin;
+        end else if(dtlb_lu_hit) begin;
             tlb_content = dtlb_content;           
         end else begin
             tlb_content = l2_tlb_content; //default  
