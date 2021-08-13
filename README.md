@@ -5,14 +5,13 @@ More is to come, keep tuned! ;)
 
 General tasks:
 *   L2 TLB design (done);
-*   Integrating L2 TLB to MMU (ongoing);
-*   Module level simulations (ongoing);
-*   Updating PTW (ongoing);
-*   Updating Load Store Unit (LSU) (ongoing);
-*   Updating Instruction Cache Interface;
+*   Integrating L2 TLB to MMU (done);
+*   Module level simulations (done);
+*   Updating PTW (done);
+*   Updating Load Store Unit (LSU) (done);
+*   Updating Instruction Cache Interface(ongoing);
 *   Other core level changes; 
-*   Core level simulations;
-*   *Queue between L1 and L2 TLBs, in case double translations are requested in single cycle;
+*   Testbenching(ongoing);
 *   FSM based implementation of L2 TLB flush logic;
 
 Useful links:
