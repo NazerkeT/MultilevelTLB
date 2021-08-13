@@ -17,43 +17,17 @@
 
 `include "tb.svh"
 
-module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
+module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
 
   // leave this
   timeunit 1ps;
-  timeprecision 1ps;
+  timeprecision 1ps; 
 
   // memory configuration (64bit words)
   parameter MemBytes          = 2**DCACHE_INDEX_WIDTH * 4 * 32;
   parameter MemWords          = MemBytes>>3;
-  // noncacheable portion
-  parameter logic [63:0] CachedAddrBeg = MemBytes>>3;//1/8th of the memory is NC
-  parameter logic [63:0] CachedAddrEnd = 64'hFFFF_FFFF_FFFF_FFFF;
-
-  localparam ariane_cfg_t ArianeDefaultConfig = '{
-    RASDepth: 2,
-    BTBEntries: 32,
-    BHTEntries: 128,
-    // idempotent region
-    NrNonIdempotentRules:  0,
-    NonIdempotentAddrBase: {64'b0},
-    NonIdempotentLength:   {64'b0},
-    // executable region
-    NrExecuteRegionRules:  0,
-    ExecuteRegionAddrBase: {64'h0},
-    ExecuteRegionLength:   {64'h0},
-    // cached region
-    NrCachedRegionRules:   1,
-    CachedRegionAddrBase:  {CachedAddrBeg},//1/8th of the memory is NC
-    CachedRegionLength:    {CachedAddrEnd-CachedAddrBeg+64'b1},
-    // cache config
-    Axi64BitCompliant:     1'b1,
-    SwapEndianess:         1'b0,
-    // debug
-    DmBaseAddress:         64'h0,
-    NrPMPEntries:          0
-  };
-
+  parameter ariane_pkg::ariane_cfg_t ArianeCfg = ariane_pkg::ArianeDefaultConfig;
+  
   // contention and invalidation rates (in %)
   parameter MemRandHitRate   = 75;
   parameter MemRandInvRate   = 10;
@@ -73,48 +47,43 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
 // DUT signal declarations
 ///////////////////////////////////////////////////////////////////////////////
 
-  logic                            flush_i,
-  logic                            enable_translation_i,
-  logic                            en_ld_st_translation_i,   // enable virtual memory translation for load/stores
+  logic                            flush_i;
+  logic                            enable_translation;
+  logic                            en_ld_st_translation;   // enable virtual memory translation for load/stores
   // IF interface
-  icache_areq_o_t                  icache_areq_i,
-  icache_areq_i_t                  icache_areq_o,
+  icache_areq_o_t                  icache_req_i;
+  icache_areq_i_t                  icache_req_o;
   // LSU interface
-  exception_t                      misaligned_ex_i,
-  logic                            lsu_req_i,        // request address translation
-  logic [riscv::VLEN-1:0]          lsu_vaddr_i,      // virtual address in
-  logic                            lsu_is_store_i,   // the translation is requested by a store
+  exception_t                      misaligned_ex;
+  logic                            lsu_req;        // request address translation
+  logic [riscv::VLEN-1:0]          lsu_vaddr;      // virtual address in
+  logic                            lsu_is_store;   // the translation is requested by a store
   // if we need to walk the page table we can't grant in the same cycle
   // Cycle 0 
-  logic                            lsu_dtlb_hit_o,   // sent in the same cycle as the request if translation hits in the DTLB
-  logic [riscv::PPNW-1:0]          lsu_dtlb_ppn_o,   // ppn (send same cycle as hit)
+  logic                            lsu_dtlb_hit;   // sent in the same cycle as the request if translation hits in the DTLB
+  logic [riscv::PPNW-1:0]          lsu_dtlb_ppn;   // ppn (send same cycle as hit)
   // Cycle 1
-  logic                            lsu_valid_o,      // translation is valid
-  logic [riscv::PLEN-1:0]          lsu_paddr_o,      // translated address
-  exception_t                      lsu_exception_o,  // address translation threw an exception
+  logic                            all_tlbs_checked; // min - in the same cycle, max - three cycles
+  logic                            lsu_valid;        // translation is valid
+  logic [riscv::PLEN-1:0]          lsu_paddr;        // translated address
+  exception_t                      lsu_exception;    // address translation threw an exception
   // General control signals
-  riscv::priv_lvl_t                priv_lvl_i,
-  riscv::priv_lvl_t                ld_st_priv_lvl_i,
-  logic                            sum_i,
-  logic                            mxr_i,
+  priv_lvl_t                       priv_lvl;
+  priv_lvl_t                       ld_st_priv_lvl;
+  logic                            sum;
+  logic                            mxr;
   // input logic flag_mprv_i,
-  logic [riscv::PPNW-1:0]          satp_ppn_i,
-  logic [ASID_WIDTH-1:0]           asid_i,
-  logic [ASID_WIDTH-1:0]           asid_to_be_flushed_i,
-  logic [riscv::VLEN-1:0]          vaddr_to_be_flushed_i,
-  logic                            flush_tlb_i,
-  // Performance counters
-  logic                            itlb_miss_o,
-  logic                            dtlb_miss_o,
+  logic [riscv::PPNW-1:0]          satp_ppn;
+  logic [ASID_WIDTH-1:0]           asid;
+  logic [ASID_WIDTH-1:0]           asid_to_be_flushed;
+  logic [riscv::VLEN-1:0]          vaddr_to_be_flushed;
+  logic                            flush_tlb;
   // PTW memory interface
-  dcache_req_o_t                   req_port_i,
-  dcache_req_i_t                   req_port_o,
-  // PMP
-  riscv::pmpcfg_t [15:0]           pmpcfg_i,
-  logic [15:0][riscv::PLEN-3:0]    pmpaddr_i
+  dcache_req_o_t                   dut_req_port_o;
+  dcache_req_i_t                   dut_req_port_i;
 
 ///////////////////////////////////////////////////////////////////////////////
-// ----> TB signal declarations
+// TB signal declarations
 ///////////////////////////////////////////////////////////////////////////////
 
   logic [63:0] mem_array[MemWords-1:0];
@@ -130,31 +99,19 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
 
   logic mem_rand_en;
   logic inv_rand_en;
-  logic amo_rand_en;
   logic tlb_rand_en;
-
-  logic write_en;
-  logic [63:0] write_paddr, write_data;
-  logic [7:0] write_be;
-
-  logic        check_en;
-  logic [7:0]  commit_be;
-  logic [63:0] commit_paddr;
-  logic        commit_en;
-
-  typedef struct packed  {
-    logic [1:0]  size;
-    logic [63:0] paddr;
-  } resp_fifo_t;
-
-  logic [63:0] act_paddr[1:0];
-  logic [63:0] exp_rdata[1:0];
-  logic [63:0] exp_paddr[1:0];
-  resp_fifo_t  fifo_data_in[1:0];
-  resp_fifo_t  fifo_data[1:0];
-  logic [1:0]  fifo_push, fifo_pop, fifo_flush;
-  logic [2:0]  flush;
+  
+  logic flush;
   logic flush_rand_en;
+    
+  logic check_en;
+
+  logic [riscv::VLEN-1:0] act_vaddr[1:0];
+  logic [riscv::PPNW-1:0] exp_ppn[1:0];
+  logic [riscv::VLEN-1:0] exp_vaddr[1:0];
+  logic [riscv::VLEN-1:0] fifo_data_in[1:0];
+  logic [riscv::VLEN-1:0] fifo_data[1:0];
+  logic [1:0]  fifo_push, fifo_pop, fifo_flush;
 
 ///////////////////////////////////////////////////////////////////////////////
 // ----> helper tasks
@@ -172,16 +129,16 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
   endtask : runSeq
 
   task automatic flushCache();
-    flush[2]      = 1'b1;
-    `APPL_WAIT_SIG(clk_i, flush_ack_o);
-    flush[2]      = 0'b0;
+    flush      = 1'b1;
+    `APPL_WAIT_CYC(clk_i,1)
+    flush      = 1'b0;
     `APPL_WAIT_CYC(clk_i,1)
   endtask : flushCache
 
   task automatic memCheck();
     check_en     = 1'b1;
     `APPL_WAIT_CYC(clk_i,1)
-    check_en     = 0'b0;
+    check_en     = 1'b0;
     `APPL_WAIT_CYC(clk_i,1)
   endtask : memCheck
 
@@ -205,36 +162,25 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     end
 
 ///////////////////////////////////////////////////////////////////////////////
-// ----> memory emulation
+// memory emulation
 ///////////////////////////////////////////////////////////////////////////////
 
   tb_mem #(
     .MemRandHitRate ( MemRandHitRate ),
     .MemRandInvRate ( MemRandInvRate ),
-    .MemWords       ( MemWords       ),
-    .CachedAddrBeg  ( CachedAddrBeg  ),
-    .CachedAddrEnd  ( CachedAddrEnd  )
+    .MemWords       ( MemWords       )
   ) i_tb_mem (
     .clk_i          ( clk_i          ),
     .rst_ni         ( rst_ni         ),
     // TB manip
     .mem_rand_en_i  ( mem_rand_en    ),
     .inv_rand_en_i  ( inv_rand_en    ),
-    .amo_rand_en_i  ( amo_rand_en    ),
-    .ptw_is_done_o  (  ),
     // DUT-MMU interface
-    .dut_req_port_i (  ),
-    .dut_req_port_o (  ),
+    .dut_req_port_i ( dut_req_port_i ),
+    .dut_req_port_o ( dut_req_port_o ),
     // for verification
     .seq_last_i     ( seq_last       ),
     .check_en_i     ( check_en       ),
-    .commit_en_i    ( commit_en      ),
-    .commit_be_i    ( commit_be      ),
-    .commit_paddr_i ( commit_paddr   ),
-    .write_en_i     ( write_en       ),
-    .write_be_i     ( write_be       ),
-    .write_data_i   ( write_data     ),
-    .write_paddr_i  ( write_paddr    ),
     .mem_array_o    ( mem_array      )
   );
 
@@ -246,77 +192,73 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     .INSTR_TLB_ENTRIES      ( 16                     ),
     .DATA_TLB_ENTRIES       ( 16                     ),
     .ASID_WIDTH             ( ASID_WIDTH             ),
-    .ArianeCfg              ( ArianeCfg              )
-  ) i_mmu (
+    .ArianeCfg              ( ArianeDefaultConfig    )
+  ) i_dut (
     // misaligned bypass
-    .flush_i                (  ),
-    .enable_translation_i   (  ),
-    .en_ld_st_translation_i (  ),
+    .clk_i,
+    .rst_i,
+    .flush_i                ( flush                ),
+    .enable_translation_i   ( enable_translation   ),
+    .en_ld_st_translation_i ( en_ld_st_translation ),
     // IF
-    .icache_areq_i,
-    .icache_areq_o,
+    .icache_areq_i          ( icache_req_i     ),
+    .icache_areq_o          ( icache_req_o     ),
     // LSU
-    .misaligned_ex_i        ( misaligned_exception   ),
-    .lsu_is_store_i         ( st_translation_req     ),
-    .lsu_req_i              ( translation_req        ),
-    .lsu_vaddr_i            ( mmu_vaddr              ),
-    .lsu_valid_o            ( translation_valid      ),
-    .lsu_paddr_o            ( mmu_paddr              ),
-    .lsu_exception_o        ( mmu_exception          ),
-    .lsu_dtlb_hit_o         ( dtlb_hit               ), // send in the same cycle as the request
-    .lsu_dtlb_ppn_o         ( dtlb_ppn               ), // send in the same cycle as the request
+    .misaligned_ex_i        ( misaligned_ex    ),
+    .lsu_is_store_i         ( lsu_is_store     ),
+    .lsu_req_i              ( lsu_req          ),
+    .lsu_vaddr_i            ( lsu_vaddr        ),
+    .lsu_valid_o            ( lsu_valid        ),
+    .all_tlbs_checked_o     ( all_tlbs_checked ),
+    .lsu_paddr_o            ( lsu_paddr        ),
+    .lsu_exception_o        ( lsu_exception    ),
+    .lsu_dtlb_hit_o         ( lsu_dtlb_hit     ), // send in the same cycle as the request
+    .lsu_dtlb_ppn_o         ( lsu_dtlb_ppn     ), // send in the same cycle as the request
     // General control
-    .priv_lvl_i,            (  ),      
-    .ld_st_priv_lvl_i,      (  ),
-    .sum_i,                 (  ),
-    .mxr_i,                 (  ),
+    .priv_lvl_i             ( priv_lvl              ),      
+    .ld_st_priv_lvl_i       ( ld_st_priv_lvl        ),
+    .sum_i                  ( sum                   ),
+    .mxr_i                  ( mxr                   ),
     // input logic flag_mprv_i,
-    .satp_ppn_i,            (  ),
-    .asid_i,                (  ),
-    .asid_to_be_flushed_i   (  ),
-    .vaddr_to_be_flushed_i  (  ),
-    .flush_tlb_i            (  ),
-    // Performance counters
-    .itlb_miss_o,
-    .dtlb_miss_o,
+    .satp_ppn_i             ( satp_ppn              ),
+    .asid_i                 ( asid                  ),
+    .asid_to_be_flushed_i   ( asid_to_be_flushed    ),
+    .vaddr_to_be_flushed_i  ( vaddr_to_be_flushed   ),
+    .flush_tlb_i            ( flush_tlb             ),
     // connecting PTW to D$ IF
-    .req_port_i             ( dcache_req_ports_i [0] ),
-    .req_port_o             ( dcache_req_ports_o [0] ),
-    // PMP
-    .pmpcfg_i,
-    .pmpaddr_i,
+    .req_port_i             ( dut_req_port_o        ),
+    .req_port_o             ( dut_req_port_i        ),
         .*
   );
 
 ///////////////////////////////////////////////////////////////////////////////
-// ----> port emulation programs
+// port emulation programs
 ///////////////////////////////////////////////////////////////////////////////
 
   // get actual paddr from read controllers
-  assign act_paddr[0] = {i_dut.gen_rd_ports[0].i_wt_dcache_ctrl.address_tag_d,
-                         i_dut.gen_rd_ports[0].i_wt_dcache_ctrl.address_idx_q,
-                         i_dut.gen_rd_ports[0].i_wt_dcache_ctrl.address_off_q};
-  assign act_paddr[1] = {i_dut.gen_rd_ports[1].i_wt_dcache_ctrl.address_tag_d,
-                         i_dut.gen_rd_ports[1].i_wt_dcache_ctrl.address_idx_q,
-                         i_dut.gen_rd_ports[1].i_wt_dcache_ctrl.address_off_q};
+  assign act_vaddr[0] = i_dut.icache_areq_i.fetch_vaddr;
+  assign act_vaddr[1] = i_dut.lsu_vaddr_i;
 
   // generate fifo queues for expected responses
+  assign fifo_data_in[0] = icache_req_i.fetch_vaddr;
+  assign fifo_data_in[1] = lsu_vaddr;
+  
+  assign fifo_push[0] = icache_req_i.fetch_req && icache_req_o.fetch_valid;
+  assign fifo_push[1] = lsu_req && lsu_valid;
+  
+  assign fifo_pop[0] = icache_req_i.fetch_valid;
+  assign fifo_pop[1] = lsu_valid;
+  
   generate
-    for(genvar k=0; k<2;k++) begin
-      assign fifo_data_in[k] =  {req_ports_i[k].data_size,
-                                 exp_paddr[k]};
-
-      assign exp_rdata[k]  = mem_array[fifo_data[k].paddr>>3];
-      assign fifo_push[k]  = req_ports_i[k].data_req & req_ports_o[k].data_gnt;
-      assign fifo_flush[k] = req_ports_i[k].kill_req;
-      assign fifo_pop[k]   = req_ports_o[k].data_rvalid;
+    for(genvar k=0; k<2; k++) begin
+      assign exp_ppn[k]    = mem_array[fifo_data[k]];
 
       fifo_v3 #(
-        .dtype(resp_fifo_t)
-      ) i_resp_fifo (
+        .dtype(logic [riscv::VLEN-1:0])
+      ) i_resp_fifo  (
         .clk_i       ( clk_i            ),
         .rst_ni      ( rst_ni           ),
-        .flush_i     ( fifo_flush[k]    ),
+        .flush_i     ( '0               ),
         .testmode_i  ( '0               ),
         .full_o      (                  ),
         .empty_o     (                  ),
@@ -329,87 +271,83 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     end
   endgenerate
 
-  tb_dfetchport #(
-    .PortName      ( "RD0"         ),
+  tb_ifetchport #(
+    .PortName      ( "$I-Port"     ),
     .FlushRate     ( FlushRate     ),
     .KillRate      ( KillRate      ),
     .TlbHitRate    ( TlbHitRate    ),
     .MemWords      ( MemWords      ),
-    .CachedAddrBeg ( CachedAddrBeg ),
-    .CachedAddrEnd ( CachedAddrEnd ),
-    .RndSeed       ( 5555555       ),
+    .RndSeed       ( 3333333       ),
     .Verbose       ( Verbose       )
-  ) i_tb_dfetchport (
+  ) i_tb_ifetchport  (
     .clk_i           ( clk_i               ),
     .rst_ni          ( rst_ni              ),
     .test_name_i     ( test_name           ),
     .req_rate_i      ( req_rate[0]         ),
     .seq_type_i      ( seq_type[0]         ),
     .tlb_rand_en_i   ( tlb_rand_en         ),
-    .seq_run_i       ( seq_run             ),
-    .seq_num_resp_i  ( seq_num_resp        ),
-    .seq_last_i      ( seq_last            ),
-    .seq_done_o      ( seq_done[0]         ),
-    .exp_paddr_o     ( exp_paddr[0]        ),
-    .exp_size_i      ( fifo_data[0].size   ),
-    .exp_paddr_i     ( fifo_data[0].paddr  ),
-    .exp_rdata_i     ( exp_rdata[0]        ),
-    .act_paddr_i     ( act_paddr[0]        ),
-    .ptw_is_done_i   (  ),
-    // DUT-MMU interface
-    .misaligned_ex_o (  ),
-    .lsu_req_o       (  ),
-    .lsu_vaddr_o     (  ),
-    .lsu_is_store_o  (  ),
-    .lsu_dtlb_hit_i  (  ),
-    .lsu_dtlb_ppn_i  (  ),
-    .all_tlbs_checked_i  (  ),  
-    .lsu_valid_i         (  ),
-    .lsu_paddr_i         (  ),
-    .lsu_exception_i     (  )
-    );
-
-  tb_ifetchport #(
-    .PortName      ( "RD1"         ),
-    .FlushRate     ( FlushRate     ),
-    .KillRate      ( KillRate      ),
-    .TlbHitRate    ( TlbHitRate    ),
-    .MemWords      ( MemWords      ),
-    .CachedAddrBeg ( CachedAddrBeg ),
-    .CachedAddrEnd ( CachedAddrEnd ),
-    .RndSeed       ( 3333333       ),
-    .Verbose       ( Verbose       )
-  ) i_tb_ifetchport (
-    .clk_i           ( clk_i               ),
-    .rst_ni          ( rst_ni              ),
-    .test_name_i     ( test_name           ),
-    .req_rate_i      ( req_rate[1]         ),
-    .seq_type_i      ( seq_type[1]         ),
-    .tlb_rand_en_i   ( tlb_rand_en         ),
     .flush_rand_en_i ( flush_rand_en       ),
     .seq_run_i       ( seq_run             ),
     .seq_num_resp_i  ( seq_num_resp        ),
     .seq_last_i      ( seq_last            ),
-    .exp_paddr_o     ( exp_paddr[1]        ),
-    .exp_size_i      ( fifo_data[1].size   ),
-    .exp_paddr_i     ( fifo_data[1].paddr  ),
-    .exp_rdata_i     ( exp_rdata[1]        ),
-    .act_paddr_i     ( act_paddr[1]        ),
-    .seq_done_o      ( seq_done[1]         ),
-    .ptw_is_done_i   (  ),
+    .seq_done_o      ( seq_done[0]         ),
+    // Comparison interface
+    .exp_paddr_o     ( exp_vaddr[0]        ),
+    .exp_paddr_i     ( fifo_data[0]        ),
+    .exp_rdata_i     ( exp_ppn[0]          ),
+    .act_paddr_i     ( act_vaddr[0]        ),
     // DUT-MMU interface
-    .icache_areq_o   (  ),
-    .icache_areq_i   (  )
+    .icache_areq_o   ( icache_req_i        ),
+    .icache_areq_i   ( icache_req_o        )
   );
 
-  tb_csrport #(
-    .PortName      ( "WR0"         ),
+  tb_dfetchport #(
+    .PortName      ( "$D-Port"     ),
+    .FlushRate     ( FlushRate     ),
+    .KillRate      ( KillRate      ),
+    .TlbHitRate    ( TlbHitRate    ),
     .MemWords      ( MemWords      ),
-    .CachedAddrBeg ( CachedAddrBeg ),
-    .CachedAddrEnd ( CachedAddrEnd ),
+    .RndSeed       ( 5555555       ),
+    .Verbose       ( Verbose       )
+  ) i_tb_dfetchport  (
+    .clk_i           ( clk_i                ),
+    .rst_ni          ( rst_ni               ),
+    .test_name_i     ( test_name            ),
+    .req_rate_i      ( req_rate[1]          ),
+    .seq_type_i      ( seq_type[1]          ),
+    .tlb_rand_en_i   ( tlb_rand_en          ),
+    .flush_rand_en_i ( flush_rand_en        ),
+    .seq_run_i       ( seq_run              ),
+    .seq_num_resp_i  ( seq_num_resp         ),
+    .seq_last_i      ( seq_last             ),
+    .seq_done_o      ( seq_done[1]          ),
+    // Comparison interface
+    .exp_paddr_o     ( exp_vaddr[1]         ),
+    .exp_paddr_i     ( fifo_data[1]         ),
+    .exp_rdata_i     ( exp_ppn[1]           ),
+    .act_paddr_i     ( act_vaddr[1]         ),
+    // DUT-MMU interface
+    .misaligned_ex_o ( misaligned_ex        ),
+    .lsu_req_o       ( lsu_req              ),
+    .lsu_vaddr_o     ( lsu_vaddr            ),
+    .lsu_is_store_o  ( lsu_is_store         ),
+    .lsu_dtlb_hit_i  ( lsu_dtlb_hit         ),
+    .lsu_dtlb_ppn_i  ( lsu_dtlb_ppn         ),
+    .all_tlbs_checked_i  ( all_tlbs_checked ),  
+    .lsu_valid_i         ( lsu_valid        ),
+    .lsu_paddr_i         ( lsu_paddr        ),
+    .lsu_exception_i     ( lsu_exception    )
+    );
+    
+  tb_csrport #(
+    .PortName      ( "CSR-Port"    ),
+    .FlushRate     ( FlushRate     ),
+    .KillRate      ( KillRate      ),
+    .TlbHitRate    ( TlbHitRate    ),
+    .MemWords      ( MemWords      ),
     .RndSeed       ( 7777777       ),
     .Verbose       ( Verbose       )
-  ) i_tb_csrport (
+  ) i_tb_csrport    (
     .clk_i          ( clk_i               ),
     .rst_ni         ( rst_ni              ),
     .test_name_i    ( test_name           ),
@@ -419,59 +357,28 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     .seq_num_vect_i ( seq_num_write       ),
     .seq_last_i     ( seq_last            ),
     .seq_done_o     ( seq_done[2]         ),
-    .ptw_is_done_i  (  ),
     // DUT-MMU interface
-    .flush_o,
-    .enable_translation_o,
-    .en_ld_st_translation_o,
-    .lsu_dtlb_hit_i,     // sent in the same cycle as the request if translation hits in the DTLB
-    .all_tlbs_checked_i, // sent in min - the same cycle, max - three cycles
+    .flush_o                ( flush                ),
+    .enable_translation_o   ( enable_translation   ),
+    .en_ld_st_translation_o ( en_ld_st_translation ),
+    .lsu_dtlb_hit_i         ( lsu_dtlb_hit         ), // sent in the same cycle as the request if translation hits in the DTLB
+    .all_tlbs_checked_i     ( all_tlbs_checked     ), // sent in min - the same cycle, max - three cycles
     // General control signals
-    .priv_lvl_o, 
-    .ld_st_priv_lvl_o,
-    .sum_o,   
-    .mxr_o,  
+    .priv_lvl_o             ( priv_lvl             ), 
+    .ld_st_priv_lvl_o       ( ld_st_priv_lvl       ),
+    .sum_o                  ( sum                  ),    
+    .mxr_o                  ( mxr                  ),  
     // input logic      
-    .satp_ppn_o,
-    .asid_o,
-    .asid_to_be_flushed_o,
-    .vaddr_to_be_flushed_o,
-    .flush_tlb_o, 
-    // Performance counters       
-    .itlb_miss_i,
-    .dtlb_miss_i, 
-    // PMP - put default values for tb
-    .pmpcfg_o,
-    .pmpaddr_o
+    .satp_ppn_o             ( satp_ppn             ),
+    .asid_o                 ( asid                 ),
+    .asid_to_be_flushed_o   ( asid_to_be_flushed   ),
+    .vaddr_to_be_flushed_o  ( vaddr_to_be_flushed  ),
+    .flush_tlb_o            ( flush_tlb            ) 
   );
-
-  assign write_en    = req_ports_i[2].data_req & req_ports_o[2].data_gnt & req_ports_i[2].data_we;
-  assign write_paddr = {req_ports_i[2].address_tag,  req_ports_i[2].address_index};
-  assign write_data  = req_ports_i[2].data_wdata;
-  assign write_be    = req_ports_i[2].data_be;
-
-  // generate write buffer commit signals based on internal eviction status
-  assign commit_be    = i_dut.i_wt_dcache_wbuffer.wr_data_be_o;
-  assign commit_paddr = i_dut.i_wt_dcache_wbuffer.wr_paddr;
-  assign commit_en    = i_dut.i_wt_dcache_wbuffer.evict;
-
-  // TODO: implement AMO agent
-  assign amo_req_i.req       = '0;
-  assign amo_req_i.amo_op    = AMO_NONE;
-  assign amo_req_i.size      = '0;
-  assign amo_req_i.operand_a = '0;
-  assign amo_req_i.operand_b = '0;
-  // amo_resp_o
-
-  assign flush_i = |flush;
 
 ///////////////////////////////////////////////////////////////////////////////
 // ----> simulation coordinator process
 ///////////////////////////////////////////////////////////////////////////////
-
-// TODO: implement CSR / controller
-// flush_i, flush_ack_o, enable_i, miss_o, wbuffer_empty_o
-
 
   initial begin : p_stim
     test_name        = "";
@@ -489,14 +396,10 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     mem_rand_en      = 0;
     tlb_rand_en      = 0;
     inv_rand_en      = 0;
-    amo_rand_en      = 0;
     flush_rand_en    = 0;
     // cache ctrl
-    flush[2]         = 0;
-    // flush_ack_o
-    // wbuffer_empty_o
-    enable_i         = 0;
-    // miss_o
+    flush            = 0;
+    enable_translation  = 0;
 
     // print some info
     $display("TB> current configuration:");
@@ -511,13 +414,13 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     rst_ni        = 1'b1;
     `APPL_WAIT_CYC(clk_i,100)
 
-    $display("TB> start with test sequences");
+    $display("TB> start with test sequences"); 
     // apply each test until seq_num_resp memory
     // requests have successfully completed
     ///////////////////////////////////////////////
     test_name    = "TEST 0 -- random read -- disabled cache";
     // config
-    enable_i     = 0;
+    enable_translation     = 0;
     seq_type     = '{default: RANDOM_SEQ};
     req_rate     = '{default: 7'd50};
     runSeq(nReadVectors);
@@ -526,7 +429,7 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     ///////////////////////////////////////////////
     test_name    = "TEST 1 -- sequential read -- disabled cache";
     // config
-    enable_i     = 0;
+    enable_translation     = 0;
     seq_type     = '{default: LINEAR_SEQ};
     req_rate     = '{default: 7'd50};
     runSeq(nReadVectors);
@@ -535,7 +438,7 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     ///////////////////////////////////////////////
     test_name    = "TEST 2 -- random read -- enabled cache";
     // config
-    enable_i     = 1;
+    enable_translation     = 1;
     seq_type     = '{default: RANDOM_SEQ};
     req_rate     = '{default: 7'd50};
     runSeq(nReadVectors);
@@ -544,7 +447,7 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     ///////////////////////////////////////////////
     test_name    = "TEST 3 -- linear read -- enabled cache";
     // config
-    enable_i     = 1;
+    enable_translation     = 1;
     seq_type     = '{default: LINEAR_SEQ};
     req_rate     = '{default: 7'd50};
     runSeq(nReadVectors);
@@ -553,7 +456,7 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     ///////////////////////////////////////////////
     test_name    = "TEST 4 -- random read -- enabled cache + tlb, mem contentions";
     // config
-    enable_i     = 1;
+    enable_translation     = 1;
     tlb_rand_en  = 1;
     mem_rand_en  = 1;
     seq_type     = '{default: RANDOM_SEQ};
@@ -564,7 +467,7 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     ///////////////////////////////////////////////
     test_name    = "TEST 5 -- linear read -- enabled cache + tlb, mem contentions";
     // config
-    enable_i     = 1;
+    enable_translation     = 1;
     tlb_rand_en  = 1;
     mem_rand_en  = 1;
     seq_type     = '{default: LINEAR_SEQ};
@@ -575,7 +478,7 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     ///////////////////////////////////////////////
     test_name    = "TEST 6 -- random read -- enabled cache + tlb, mem contentions + invalidations";
     // config
-    enable_i     = 1;
+    enable_translation     = 1;
     tlb_rand_en  = 1;
     mem_rand_en  = 1;
     inv_rand_en  = 1;
@@ -587,7 +490,7 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     ///////////////////////////////////////////////
     test_name    = "TEST 7 -- random read/write -- disabled cache";
     // config
-    enable_i     = 0;
+    enable_translation     = 0;
     tlb_rand_en  = 0;
     mem_rand_en  = 0;
     inv_rand_en  = 0;
@@ -599,7 +502,7 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     ///////////////////////////////////////////////
     test_name    = "TEST 8 -- random read/write -- enabled cache";
     // config
-    enable_i     = 1;
+    enable_translation     = 1;
     tlb_rand_en  = 0;
     mem_rand_en  = 0;
     inv_rand_en  = 0;
@@ -611,7 +514,7 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     ///////////////////////////////////////////////
     test_name    = "TEST 9 -- random read/write -- enabled cache + tlb, mem contentions + invalidations";
     // config
-    enable_i     = 1;
+    enable_translation     = 1;
     tlb_rand_en  = 1;
     mem_rand_en  = 1;
     inv_rand_en  = 1;
@@ -623,7 +526,7 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     ///////////////////////////////////////////////
     test_name    = "TEST 10 -- linear burst write -- enabled cache";
     // config
-    enable_i     = 1;
+    enable_translation     = 1;
     tlb_rand_en  = 0;
     mem_rand_en  = 0;
     inv_rand_en  = 0;
@@ -635,21 +538,21 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     ///////////////////////////////////////////////
     test_name    = "TEST 11 -- linear burst write with hot cache";
     // config
-    enable_i     = 1;
+    enable_translation     = 1;
     tlb_rand_en  = 0;
     mem_rand_en  = 0;
     inv_rand_en  = 0;
     seq_type     = '{IDLE_SEQ, IDLE_SEQ, LINEAR_SEQ};
     req_rate     = '{default:100};
-    runSeq((CachedAddrBeg>>3)+(2**(DCACHE_INDEX_WIDTH-3))*DCACHE_SET_ASSOC,0);
+//    runSeq((CachedAddrBeg>>3)+(2**(DCACHE_INDEX_WIDTH-3))*DCACHE_SET_ASSOC,0);
     seq_type     = '{LINEAR_SEQ, IDLE_SEQ, IDLE_SEQ};
-    runSeq(0,(CachedAddrBeg>>3)+(2**(DCACHE_INDEX_WIDTH-3))*DCACHE_SET_ASSOC);
+//    runSeq(0,(CachedAddrBeg>>3)+(2**(DCACHE_INDEX_WIDTH-3))*DCACHE_SET_ASSOC);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
     test_name    = "TEST 12 -- random write bursts -- enabled cache";
     // config
-    enable_i     = 1;
+    enable_translation     = 1;
     tlb_rand_en  = 0;
     mem_rand_en  = 0;
     inv_rand_en  = 0;
@@ -661,7 +564,7 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     ///////////////////////////////////////////////
     test_name    = "TEST 13 -- random write bursts -- enabled cache + tlb, mem contentions + invalidations";
     // config
-    enable_i     = 1;
+    enable_translation     = 1;
     tlb_rand_en  = 1;
     mem_rand_en  = 1;
     inv_rand_en  = 1;
@@ -673,7 +576,7 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     ///////////////////////////////////////////////
     test_name    = "TEST 14 -- random write/read-- enabled cache + tlb, mem contentions + invalidations";
     // config
-    enable_i     = 1;
+    enable_translation     = 1;
     tlb_rand_en  = 1;
     mem_rand_en  = 1;
     inv_rand_en  = 1;
@@ -685,7 +588,7 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     ///////////////////////////////////////////////
     test_name    = "TEST 15 -- short wrapping sequences to provoke writebuffer hits";
     // config
-    enable_i     = 1;
+    enable_translation     = 1;
     tlb_rand_en  = 0;
     mem_rand_en  = 0;
     inv_rand_en  = 0;
@@ -697,7 +600,7 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     ///////////////////////////////////////////////
     test_name    = "TEST 16 -- random write/read-- enabled cache + tlb, mem contentions + invalidations + random flushes";
     // config
-    enable_i      = 1;
+    enable_translation      = 1;
     tlb_rand_en   = 1;
     mem_rand_en   = 1;
     inv_rand_en   = 1;

@@ -30,21 +30,13 @@ module tb_mem import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*;#(
   input  logic            mem_rand_en_i,
   input  logic            inv_rand_en_i,
   input  logic            amo_rand_en_i,
-  output logic            ptw_is_done_o,
   // dcache interface
   input  dcache_req_i_t  dut_req_port_i,
   output dcache_req_o_t  dut_req_port_o,    
   // ----> expected response interface 
   input  logic           seq_last_i,
   input  logic           check_en_i,
-  input  logic           commit_en_i,
-  input  logic [7:0]     commit_be_i,
-  input  logic [63:0]    commit_paddr_i,
-  input  logic           write_en_i,
-  input  logic [7:0]     write_be_i,
-  input  logic [63:0]    write_data_i,
-  input  logic [63:0]    write_paddr_i,
-  output logic [63:0]    mem_array_o[MemWords-1:0]
+  output logic [X-1:0]    mem_array_o[MemWords-1:0]
 );
 
     // leave this
