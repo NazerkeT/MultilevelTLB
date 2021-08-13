@@ -110,8 +110,8 @@ module mmu import ariane_pkg::*; #(
     
     assign all_tlbs_checked_o = all_hashes_checked; // output assignment
     // Update tlbs
-    assign update_itlb   = (!itlb_lu_hit && tlb_lu_hit)  ? tlb_content : update_ptw_itlb;
-    assign update_dtlb   = (!dtlb_lu_hit && tlb_lu_hit)  ? tlb_content : update_ptw_dtlb;
+    assign update_itlb   = (!itlb_lu_hit && tlb_lu_hit)  ? l2_tlb_content : update_ptw_itlb;
+    assign update_dtlb   = (!dtlb_lu_hit && tlb_lu_hit)  ? l2_tlb_content : update_ptw_dtlb;
     assign update_l2_tlb = (!itlb_lu_hit && !tlb_lu_hit) ? update_ptw_itlb : update_ptw_dtlb;
     
     tlb #(
