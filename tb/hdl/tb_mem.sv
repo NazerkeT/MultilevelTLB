@@ -16,8 +16,6 @@
 
 `include "tb.svh"
 
-
-
 module tb_mem import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*;#(
   parameter string MemName             = "TB_MEM",
   parameter MemRandHitRate             = 10, //in percent
@@ -26,19 +24,17 @@ module tb_mem import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*;#(
   parameter logic [63:0] CachedAddrBeg = MemWords/2,
   parameter logic [63:0] CachedAddrEnd = 64'hFFFF_FFFF_FFFF_FFFF
 ) (
-  input logic            clk_i,
-  input logic            rst_ni,
+  input  logic            clk_i,
+  input  logic            rst_ni,
   // randomization settings
-  input logic            mem_rand_en_i,
-  input logic            inv_rand_en_i,
-  input logic            amo_rand_en_i,
+  input  logic            mem_rand_en_i,
+  input  logic            inv_rand_en_i,
+  input  logic            amo_rand_en_i,
+  output logic            ptw_is_done_o,
   // dcache interface
-  output logic           mem_rtrn_vld_o,
-  output dcache_rtrn_t   mem_rtrn_o,
-  input  logic           mem_data_req_i,
-  output logic           mem_data_ack_o,
-  input  dcache_req_t    mem_data_i,
-  // ----> expected response interface
+  input  dcache_req_i_t  dut_req_port_i,
+  output dcache_req_o_t  dut_req_port_o,    
+  // ----> expected response interface 
   input  logic           seq_last_i,
   input  logic           check_en_i,
   input  logic           commit_en_i,

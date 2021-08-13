@@ -93,16 +93,16 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
   logic [riscv::PLEN-1:0]          lsu_paddr_o,      // translated address
   exception_t                      lsu_exception_o,  // address translation threw an exception
   // General control signals
-  riscv::priv_lvl_t                 priv_lvl_i,
-  riscv::priv_lvl_t                 ld_st_priv_lvl_i,
-  logic                             sum_i,
-  logic                             mxr_i,
+  riscv::priv_lvl_t                priv_lvl_i,
+  riscv::priv_lvl_t                ld_st_priv_lvl_i,
+  logic                            sum_i,
+  logic                            mxr_i,
   // input logic flag_mprv_i,
-  logic [riscv::PPNW-1:0]           satp_ppn_i,
-  logic [ASID_WIDTH-1:0]            asid_i,
-  logic [ASID_WIDTH-1:0]            asid_to_be_flushed_i,
-  logic [riscv::VLEN-1:0]           vaddr_to_be_flushed_i,
-  logic                             flush_tlb_i,
+  logic [riscv::PPNW-1:0]          satp_ppn_i,
+  logic [ASID_WIDTH-1:0]           asid_i,
+  logic [ASID_WIDTH-1:0]           asid_to_be_flushed_i,
+  logic [riscv::VLEN-1:0]          vaddr_to_be_flushed_i,
+  logic                            flush_tlb_i,
   // Performance counters
   logic                            itlb_miss_o,
   logic                            dtlb_miss_o,
@@ -217,14 +217,14 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
   ) i_tb_mem (
     .clk_i          ( clk_i          ),
     .rst_ni         ( rst_ni         ),
+    // TB manip
     .mem_rand_en_i  ( mem_rand_en    ),
     .inv_rand_en_i  ( inv_rand_en    ),
     .amo_rand_en_i  ( amo_rand_en    ),
-    .mem_data_req_i ( mem_data_req_o ),
-    .mem_data_ack_o ( mem_data_ack_i ),
-    .mem_data_i     ( mem_data_o     ),
-    .mem_rtrn_vld_o ( mem_rtrn_vld_i ),
-    .mem_rtrn_o     ( mem_rtrn_i     ),
+    .ptw_is_done_o  (  ),
+    // DUT-MMU interface
+    .dut_req_port_i (  ),
+    .dut_req_port_o (  ),
     // for verification
     .seq_last_i     ( seq_last       ),
     .check_en_i     ( check_en       ),
@@ -329,7 +329,7 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     end
   endgenerate
 
-  tb_readport #(
+  tb_dfetchport #(
     .PortName      ( "RD0"         ),
     .FlushRate     ( FlushRate     ),
     .KillRate      ( KillRate      ),
@@ -339,14 +339,13 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     .CachedAddrEnd ( CachedAddrEnd ),
     .RndSeed       ( 5555555       ),
     .Verbose       ( Verbose       )
-  ) i_tb_readport0 (
+  ) i_tb_dfetchport (
     .clk_i           ( clk_i               ),
     .rst_ni          ( rst_ni              ),
     .test_name_i     ( test_name           ),
     .req_rate_i      ( req_rate[0]         ),
     .seq_type_i      ( seq_type[0]         ),
     .tlb_rand_en_i   ( tlb_rand_en         ),
-    .flush_rand_en_i ( flush_rand_en       ),
     .seq_run_i       ( seq_run             ),
     .seq_num_resp_i  ( seq_num_resp        ),
     .seq_last_i      ( seq_last            ),
@@ -356,13 +355,21 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     .exp_paddr_i     ( fifo_data[0].paddr  ),
     .exp_rdata_i     ( exp_rdata[0]        ),
     .act_paddr_i     ( act_paddr[0]        ),
-    .flush_o         ( flush[0]            ),
-    .flush_ack_i     ( flush_ack_o         ),
-    .dut_req_port_o  ( req_ports_i[0]      ),
-    .dut_req_port_i  ( req_ports_o[0]      )
+    .ptw_is_done_i   (  ),
+    // DUT-MMU interface
+    .misaligned_ex_o (  ),
+    .lsu_req_o       (  ),
+    .lsu_vaddr_o     (  ),
+    .lsu_is_store_o  (  ),
+    .lsu_dtlb_hit_i  (  ),
+    .lsu_dtlb_ppn_i  (  ),
+    .all_tlbs_checked_i  (  ),  
+    .lsu_valid_i         (  ),
+    .lsu_paddr_i         (  ),
+    .lsu_exception_i     (  )
     );
 
-  tb_readport #(
+  tb_ifetchport #(
     .PortName      ( "RD1"         ),
     .FlushRate     ( FlushRate     ),
     .KillRate      ( KillRate      ),
@@ -372,7 +379,7 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     .CachedAddrEnd ( CachedAddrEnd ),
     .RndSeed       ( 3333333       ),
     .Verbose       ( Verbose       )
-  ) i_tb_readport1 (
+  ) i_tb_ifetchport (
     .clk_i           ( clk_i               ),
     .rst_ni          ( rst_ni              ),
     .test_name_i     ( test_name           ),
@@ -389,20 +396,20 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     .exp_rdata_i     ( exp_rdata[1]        ),
     .act_paddr_i     ( act_paddr[1]        ),
     .seq_done_o      ( seq_done[1]         ),
-    .flush_o         ( flush[1]            ),
-    .flush_ack_i     ( flush_ack_o         ),
-    .dut_req_port_o  ( req_ports_i[1]      ),
-    .dut_req_port_i  ( req_ports_o[1]      )
+    .ptw_is_done_i   (  ),
+    // DUT-MMU interface
+    .icache_areq_o   (  ),
+    .icache_areq_i   (  )
   );
 
-  tb_writeport #(
+  tb_csrport #(
     .PortName      ( "WR0"         ),
     .MemWords      ( MemWords      ),
     .CachedAddrBeg ( CachedAddrBeg ),
     .CachedAddrEnd ( CachedAddrEnd ),
     .RndSeed       ( 7777777       ),
     .Verbose       ( Verbose       )
-  ) i_tb_writeport (
+  ) i_tb_csrport (
     .clk_i          ( clk_i               ),
     .rst_ni         ( rst_ni              ),
     .test_name_i    ( test_name           ),
@@ -412,8 +419,30 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
     .seq_num_vect_i ( seq_num_write       ),
     .seq_last_i     ( seq_last            ),
     .seq_done_o     ( seq_done[2]         ),
-    .dut_req_port_o ( req_ports_i[2]      ),
-    .dut_req_port_i ( req_ports_o[2]      )
+    .ptw_is_done_i  (  ),
+    // DUT-MMU interface
+    .flush_o,
+    .enable_translation_o,
+    .en_ld_st_translation_o,
+    .lsu_dtlb_hit_i,     // sent in the same cycle as the request if translation hits in the DTLB
+    .all_tlbs_checked_i, // sent in min - the same cycle, max - three cycles
+    // General control signals
+    .priv_lvl_o, 
+    .ld_st_priv_lvl_o,
+    .sum_o,   
+    .mxr_o,  
+    // input logic      
+    .satp_ppn_o,
+    .asid_o,
+    .asid_to_be_flushed_o,
+    .vaddr_to_be_flushed_o,
+    .flush_tlb_o, 
+    // Performance counters       
+    .itlb_miss_i,
+    .dtlb_miss_i, 
+    // PMP - put default values for tb
+    .pmpcfg_o,
+    .pmpaddr_o
   );
 
   assign write_en    = req_ports_i[2].data_req & req_ports_o[2].data_gnt & req_ports_i[2].data_we;
@@ -685,3 +714,15 @@ module tb import tb_pkg::*; import ariane_pkg::*; import wt_cache_pkg::*; #()();
 
 
 endmodule
+
+
+
+
+
+
+
+
+
+
+
+
