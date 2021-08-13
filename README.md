@@ -9,9 +9,9 @@ General tasks:
 *   Module level simulations (done);
 *   Updating PTW (done);
 *   Updating Load Store Unit (LSU) (done);
-*   Updating Instruction Cache Interface(ongoing);
+*   Updating Instruction Cache Interface (ongoing);
 *   Other core level changes; 
-*   Testbenching(ongoing);
+*   Testbenching (ongoing);
 *   FSM based implementation of L2 TLB flush logic;
 
 Useful links:
