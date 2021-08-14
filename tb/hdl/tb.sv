@@ -33,7 +33,7 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
   parameter MemRandInvRate   = 10;
   parameter TlbHitRate       = 95;
 
-  // parameters for random read sequences (in %)
+  // parameters for random read sequences (in %)    
   parameter FlushRate         = 10;
   parameter KillRate          = 5;
 
@@ -41,13 +41,12 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
 
   // number of vectors per test
   parameter nReadVectors      = 20000;
-  parameter nWriteVectors     = 20000;
 
 ///////////////////////////////////////////////////////////////////////////////
 // DUT signal declarations
 ///////////////////////////////////////////////////////////////////////////////
 
-  logic                            flush_i;
+  logic                            flush;
   logic                            enable_translation;
   logic                            en_ld_st_translation;   // enable virtual memory translation for load/stores
   // IF interface
@@ -63,7 +62,7 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
   logic                            lsu_dtlb_hit;   // sent in the same cycle as the request if translation hits in the DTLB
   logic [riscv::PPNW-1:0]          lsu_dtlb_ppn;   // ppn (send same cycle as hit)
   // Cycle 1
-  logic                            all_tlbs_checked; // min - in the same cycle, max - three cycles
+  logic                            all_tlbs_checked; // min - in the same cycle, max - in three cycles
   logic                            lsu_valid;        // translation is valid
   logic [riscv::PLEN-1:0]          lsu_paddr;        // translated address
   exception_t                      lsu_exception;    // address translation threw an exception
@@ -86,11 +85,10 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
 // TB signal declarations
 ///////////////////////////////////////////////////////////////////////////////
 
-  logic [63:0] mem_array[MemWords-1:0];
-
+  // TB stim signals
   string test_name;
   logic clk_i, rst_ni;
-  logic [31:0] seq_num_resp, seq_num_write;
+  logic [31:0] seq_num_resp;
   seq_t [2:0] seq_type;
   logic [2:0] seq_done;
   logic [6:0] req_rate[2:0];
@@ -101,27 +99,32 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
   logic inv_rand_en;
   logic tlb_rand_en;
   
-  logic flush;
-  logic flush_rand_en;
+  logic flush_rand_en; 
     
   logic check_en;
-
+  
+  // TB Mem interface
+  icache_areq_i_t         mem_icache_req;
+  logic                   mem_lsu_valid;
+  logic [riscv::PLEN-1:0] mem_lsu_paddr;
+  exception_t             mem_lsu_except;
+        
+  //TB Port interface
   logic [riscv::VLEN-1:0] act_vaddr[1:0];
   logic [riscv::PPNW-1:0] exp_ppn[1:0];
   logic [riscv::VLEN-1:0] exp_vaddr[1:0];
-  logic [riscv::VLEN-1:0] fifo_data_in[1:0];
-  logic [riscv::VLEN-1:0] fifo_data[1:0];
+  logic [riscv::PPNW-1:0] fifo_data_in[1:0];
+  logic [riscv::PPNW-1:0] fifo_data[1:0];
   logic [1:0]  fifo_push, fifo_pop, fifo_flush;
 
 ///////////////////////////////////////////////////////////////////////////////
-// ----> helper tasks
+// helper tasks
 ///////////////////////////////////////////////////////////////////////////////
 
-  task automatic runSeq(input int nReadVectors, input int nWriteVectors = 0, input logic last =1'b0);
+  task automatic runSeq(input int nReadVectors, input logic last =1'b0);
     seq_last      = last;
     seq_run       = 1'b1;
     seq_num_resp  = nReadVectors;
-    seq_num_write = nWriteVectors;
     `APPL_WAIT_CYC(clk_i,1)
     seq_run      = 1'b0;
     `APPL_WAIT_SIG(clk_i, &seq_done)
@@ -172,20 +175,30 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
   ) i_tb_mem (
     .clk_i          ( clk_i          ),
     .rst_ni         ( rst_ni         ),
+    // control (in)validation
+    .seq_type_i     ( seq_type[3]    ),
     // TB manip
     .mem_rand_en_i  ( mem_rand_en    ),
     .inv_rand_en_i  ( inv_rand_en    ),
     // DUT-MMU interface
     .dut_req_port_i ( dut_req_port_i ),
     .dut_req_port_o ( dut_req_port_o ),
-    // for verification
+    // verification inp
     .seq_last_i     ( seq_last       ),
     .check_en_i     ( check_en       ),
-    .mem_array_o    ( mem_array      )
+    .icache_areq_i  ( icache_req_i   ),
+    .lsu_req_i      ( lsu_req        ),
+    .lsu_vaddr_i    ( lsu_vaddr      ),
+    .lsu_is_store_i ( lsu_is_store   ),
+    // verification out
+    .icache_areq_o  ( mem_icache_req ),
+    .lsu_valid_o    ( mem_lsu_valid  ),
+    .lsu_paddr_o    ( mem_lsu_paddr  ),
+    .lsu_exception_o( mem_lsu_except )
   );
 
 ///////////////////////////////////////////////////////////////////////////////
-// MUT
+// DUT
 ///////////////////////////////////////////////////////////////////////////////
 
   mmu #(
@@ -251,8 +264,6 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
   
   generate
     for(genvar k=0; k<2; k++) begin
-      assign exp_ppn[k]    = mem_array[fifo_data[k]];
-
       fifo_v3 #(
         .dtype(logic [riscv::VLEN-1:0])
       ) i_resp_fifo  (
@@ -285,17 +296,15 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
     .test_name_i     ( test_name           ),
     .req_rate_i      ( req_rate[0]         ),
     .seq_type_i      ( seq_type[0]         ),
-    .tlb_rand_en_i   ( tlb_rand_en         ),
-    .flush_rand_en_i ( flush_rand_en       ),
     .seq_run_i       ( seq_run             ),
     .seq_num_resp_i  ( seq_num_resp        ),
     .seq_last_i      ( seq_last            ),
     .seq_done_o      ( seq_done[0]         ),
     // Comparison interface
-    .exp_paddr_o     ( exp_vaddr[0]        ),
-    .exp_paddr_i     ( fifo_data[0]        ),
-    .exp_rdata_i     ( exp_ppn[0]          ),
-    .act_paddr_i     ( act_vaddr[0]        ),
+    .exp_vaddr_o     ( exp_vaddr[0]        ),
+    .exp_vaddr_i     ( fifo_data[0]        ),
+    .act_vaddr_i     ( act_vaddr[0]        ),
+    .mem_req_i       ( mem_icache_req      ),
     // DUT-MMU interface
     .icache_areq_o   ( icache_req_i        ),
     .icache_areq_i   ( icache_req_o        )
@@ -315,17 +324,17 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
     .test_name_i     ( test_name            ),
     .req_rate_i      ( req_rate[1]          ),
     .seq_type_i      ( seq_type[1]          ),
-    .tlb_rand_en_i   ( tlb_rand_en          ),
-    .flush_rand_en_i ( flush_rand_en        ),
     .seq_run_i       ( seq_run              ),
     .seq_num_resp_i  ( seq_num_resp         ),
     .seq_last_i      ( seq_last             ),
     .seq_done_o      ( seq_done[1]          ),
     // Comparison interface
-    .exp_paddr_o     ( exp_vaddr[1]         ),
-    .exp_paddr_i     ( fifo_data[1]         ),
-    .exp_rdata_i     ( exp_ppn[1]           ),
-    .act_paddr_i     ( act_vaddr[1]         ),
+    .exp_vaddr_o     ( exp_vaddr[1]         ),
+    .exp_vaddr_i     ( fifo_data[1]         ),
+    .act_vaddr_i     ( act_vaddr[1]         ),
+    .mem_valid_i     ( mem_lsu_valid        ),
+    .mem_paddr_i     ( mem_lsu_paddr        ),
+    .mem_exception_i ( mem_lsu_except       ),
     // DUT-MMU interface
     .misaligned_ex_o ( misaligned_ex        ),
     .lsu_req_o       ( lsu_req              ),
@@ -347,16 +356,17 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
     .MemWords      ( MemWords      ),
     .RndSeed       ( 7777777       ),
     .Verbose       ( Verbose       )
-  ) i_tb_csrport    (
-    .clk_i          ( clk_i               ),
-    .rst_ni         ( rst_ni              ),
-    .test_name_i    ( test_name           ),
-    .req_rate_i     ( req_rate[2]         ),
-    .seq_type_i     ( seq_type[2]         ),
-    .seq_run_i      ( seq_run             ),
-    .seq_num_vect_i ( seq_num_write       ),
-    .seq_last_i     ( seq_last            ),
-    .seq_done_o     ( seq_done[2]         ),
+  ) i_tb_csrport     (
+    .clk_i           ( clk_i                ),
+    .rst_ni          ( rst_ni               ),
+    .test_name_i     ( test_name            ),
+    .req_rate_i      ( req_rate[2]          ),
+    .seq_type_i      ( seq_type[2]          ),
+    .flush_rand_en_i ( flush_rand_en        ),
+    .seq_run_i       ( seq_run              ),
+    .seq_num_resp_i  ( seq_num_resp         ),
+    .seq_last_i      ( seq_last             ),
+    .seq_done_o      ( seq_done[2]          ),
     // DUT-MMU interface
     .flush_o                ( flush                ),
     .enable_translation_o   ( enable_translation   ),
@@ -380,6 +390,10 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
 // ----> simulation coordinator process
 ///////////////////////////////////////////////////////////////////////////////
 
+// to-do: fix enable/disable signals for ports
+//        fix seq_types
+//        complete functions within a port
+
   initial begin : p_stim
     test_name        = "";
     seq_type         = '{default: RANDOM_SEQ};
@@ -387,7 +401,6 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
     seq_run          = 1'b0;
     seq_last         = 1'b0;
     seq_num_resp     = '0;
-    seq_num_write    = '0;
     check_en         = '0;
     // seq_done
     end_of_sim       = 0;
@@ -404,8 +417,6 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
     // print some info
     $display("TB> current configuration:");
     $display("TB> MemWords        %d",   MemWords);
-    $display("TB> CachedAddrBeg   %16X", CachedAddrBeg);
-    $display("TB> CachedAddrEnd   %16X", CachedAddrEnd);
     $display("TB> MemRandHitRate  %d",   MemRandHitRate);
     $display("TB> MemRandInvRate  %d",   MemRandInvRate);
 
@@ -418,25 +429,25 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
     // apply each test until seq_num_resp memory
     // requests have successfully completed
     ///////////////////////////////////////////////
-    test_name    = "TEST 0 -- random read -- disabled cache";
+    test_name    = "TEST 0 -- random i_access -- enabled translation";
+    // config
+    enable_translation     = 1;
+    seq_type     = '{default: RANDOM_SEQ};
+    req_rate     = '{default: 7'd50};
+    runSeq(nReadVectors);
+    flushCache();
+    memCheck();
+    ///////////////////////////////////////////////
+    test_name    = "TEST 1 -- sequential i_access -- enabled translation";
     // config
     enable_translation     = 0;
-    seq_type     = '{default: RANDOM_SEQ};
-    req_rate     = '{default: 7'd50};
-    runSeq(nReadVectors);
-    flushCache();
-    memCheck();
-    ///////////////////////////////////////////////
-    test_name    = "TEST 1 -- sequential read -- disabled cache";
-    // config
-    enable_translation     = 0;
     seq_type     = '{default: LINEAR_SEQ};
     req_rate     = '{default: 7'd50};
     runSeq(nReadVectors);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
-    test_name    = "TEST 2 -- random read -- enabled cache";
+    test_name    = "TEST 2 -- random d_access -- enabled translation";
     // config
     enable_translation     = 1;
     seq_type     = '{default: RANDOM_SEQ};
@@ -445,7 +456,7 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
-    test_name    = "TEST 3 -- linear read -- enabled cache";
+    test_name    = "TEST 3 -- sequential d_access -- enabled translation";
     // config
     enable_translation     = 1;
     seq_type     = '{default: LINEAR_SEQ};
@@ -454,7 +465,7 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
-    test_name    = "TEST 4 -- random read -- enabled cache + tlb, mem contentions";
+    test_name    = "TEST 4 -- random i and d access -- enabled translation";
     // config
     enable_translation     = 1;
     tlb_rand_en  = 1;
@@ -465,149 +476,164 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
-    test_name    = "TEST 5 -- linear read -- enabled cache + tlb, mem contentions";
+    test_name    = "TEST 5 -- random i_access -- enabled translation, validation contentions";
     // config
     enable_translation     = 1;
     tlb_rand_en  = 1;
     mem_rand_en  = 1;
-    seq_type     = '{default: LINEAR_SEQ};
+    seq_type     = '{default: RANDOM_SEQ};
     req_rate     = '{default: 7'd50};
     runSeq(nReadVectors);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
-    test_name    = "TEST 6 -- random read -- enabled cache + tlb, mem contentions + invalidations";
+    test_name    = "TEST 6 -- sequential i_access -- enabled translation, validation contentions";
     // config
     enable_translation     = 1;
-    tlb_rand_en  = 1;
-    mem_rand_en  = 1;
     inv_rand_en  = 1;
-    seq_type     = '{default: RANDOM_SEQ};
+    seq_type     = '{default: LINEAR_SEQ};
     req_rate     = '{default: 7'd50};
     runSeq(nReadVectors);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
-    test_name    = "TEST 7 -- random read/write -- disabled cache";
+    test_name    = "TEST 7 -- random d_access -- enabled translation, validation contentions";
     // config
     enable_translation     = 0;
-    tlb_rand_en  = 0;
-    mem_rand_en  = 0;
-    inv_rand_en  = 0;
-    seq_type     = '{default: RANDOM_SEQ};
-    req_rate     = '{default: 7'd25};
-    runSeq(nReadVectors,nWriteVectors);
-    flushCache();
-    memCheck();
-    ///////////////////////////////////////////////
-    test_name    = "TEST 8 -- random read/write -- enabled cache";
-    // config
-    enable_translation     = 1;
-    tlb_rand_en  = 0;
-    mem_rand_en  = 0;
-    inv_rand_en  = 0;
-    seq_type     = '{default: RANDOM_SEQ};
-    req_rate     = '{default: 7'd25};
-    runSeq(nReadVectors,2*nWriteVectors);
-    flushCache();
-    memCheck();
-    ///////////////////////////////////////////////
-    test_name    = "TEST 9 -- random read/write -- enabled cache + tlb, mem contentions + invalidations";
-    // config
-    enable_translation     = 1;
-    tlb_rand_en  = 1;
-    mem_rand_en  = 1;
     inv_rand_en  = 1;
     seq_type     = '{default: RANDOM_SEQ};
     req_rate     = '{default: 7'd25};
-    runSeq(nReadVectors,2*nWriteVectors);
+    runSeq(nReadVectors);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
-    test_name    = "TEST 10 -- linear burst write -- enabled cache";
+    test_name    = "TEST 8 -- sequential d_access -- enabled translation, validation contentions";
     // config
     enable_translation     = 1;
-    tlb_rand_en  = 0;
-    mem_rand_en  = 0;
+    inv_rand_en  = 1;
+    seq_type     = '{default: LINEAR_SEQ};
+    req_rate     = '{default: 7'd25};
+    runSeq(nReadVectors);
+    flushCache();
+    memCheck();
+    ///////////////////////////////////////////////
+    test_name    = "TEST 9 -- random i and d_access -- enabled translation, validation contentions";
+    // config
+    enable_translation     = 1;
+    inv_rand_en  = 1;
+    seq_type     = '{default: RANDOM_SEQ};
+    req_rate     = '{default: 7'd25};
+    runSeq(nReadVectors);
+    flushCache();
+    memCheck();
+    ///////////////////////////////////////////////
+    test_name    = "TEST 10 -- random i_access -- enabled translation, random flushes";
+    // config
+    enable_translation     = 1;
     inv_rand_en  = 0;
-    seq_type     = '{LINEAR_SEQ, IDLE_SEQ, IDLE_SEQ};
+    flush_rand_en = 1;
+    seq_type     = '{RANDOM_SEQ};
     req_rate     = '{100, 0, 0};
-    runSeq(0,nWriteVectors);
+    runSeq(0);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
-    test_name    = "TEST 11 -- linear burst write with hot cache";
+    test_name    = "TEST 11 -- sequential i_access -- enabled translation, random flushes";
     // config
     enable_translation     = 1;
-    tlb_rand_en  = 0;
-    mem_rand_en  = 0;
     inv_rand_en  = 0;
-    seq_type     = '{IDLE_SEQ, IDLE_SEQ, LINEAR_SEQ};
+    flush_rand_en = 1;
+    seq_type     = '{LINEAR_SEQ};
     req_rate     = '{default:100};
-//    runSeq((CachedAddrBeg>>3)+(2**(DCACHE_INDEX_WIDTH-3))*DCACHE_SET_ASSOC,0);
     seq_type     = '{LINEAR_SEQ, IDLE_SEQ, IDLE_SEQ};
-//    runSeq(0,(CachedAddrBeg>>3)+(2**(DCACHE_INDEX_WIDTH-3))*DCACHE_SET_ASSOC);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
-    test_name    = "TEST 12 -- random write bursts -- enabled cache";
+    test_name    = "TEST 12 -- random d_access -- enabled translation, random flushes";
     // config
     enable_translation     = 1;
-    tlb_rand_en  = 0;
-    mem_rand_en  = 0;
     inv_rand_en  = 0;
-    seq_type     = '{BURST_SEQ, RANDOM_SEQ, RANDOM_SEQ};
+    flush_rand_en = 1;
+    seq_type     = '{RANDOM_SEQ};
     req_rate     = '{75, 0, 0};
-    runSeq(0,nWriteVectors);
+    runSeq(0);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
-    test_name    = "TEST 13 -- random write bursts -- enabled cache + tlb, mem contentions + invalidations";
+    test_name    = "TEST 13 -- sequential d_access -- enabled translation, random flushes";
     // config
     enable_translation     = 1;
-    tlb_rand_en  = 1;
-    mem_rand_en  = 1;
-    inv_rand_en  = 1;
-    seq_type     = '{BURST_SEQ, IDLE_SEQ, IDLE_SEQ};
+    inv_rand_en  = 0;
+    flush_rand_en = 1;
+    seq_type     = '{LINEAR_SEQ};
     req_rate     = '{75, 0, 0};
-    runSeq(0,nWriteVectors);
+    runSeq(0);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
-    test_name    = "TEST 14 -- random write/read-- enabled cache + tlb, mem contentions + invalidations";
+    test_name    = "TEST 14 -- random i and d access -- enabled translation, random flushes";
     // config
     enable_translation     = 1;
-    tlb_rand_en  = 1;
-    mem_rand_en  = 1;
-    inv_rand_en  = 1;
-    seq_type     = '{RANDOM_SEQ, RANDOM_SEQ, RANDOM_SEQ};
+    inv_rand_en  = 0;
+    flush_rand_en = 1;
+    seq_type     = '{RANDOM_SEQ};
     req_rate     = '{default:25};
-    runSeq(nReadVectors,nWriteVectors);
+    runSeq(nReadVectors);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
-    test_name    = "TEST 15 -- short wrapping sequences to provoke writebuffer hits";
+    test_name    = "TEST 15 -- random i_access -- enabled translation, random flushes, validation contentions";
     // config
     enable_translation     = 1;
-    tlb_rand_en  = 0;
-    mem_rand_en  = 0;
-    inv_rand_en  = 0;
-    seq_type     = '{WRAP_SEQ, IDLE_SEQ, WRAP_SEQ};
+    inv_rand_en  = 1;
+    flush_rand_en = 1;
+    seq_type     = '{RANDOM_SEQ};
     req_rate     = '{100,0,20};
-    runSeq(nReadVectors,nWriteVectors);
+    runSeq(nReadVectors);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
-    test_name    = "TEST 16 -- random write/read-- enabled cache + tlb, mem contentions + invalidations + random flushes";
+    test_name    = "TEST 16 -- sequential i_access -- enabled translation, random flushes, validation contentions";
     // config
     enable_translation      = 1;
-    tlb_rand_en   = 1;
-    mem_rand_en   = 1;
-    inv_rand_en   = 1;
+    inv_rand_en  = 1;
     flush_rand_en = 1;
-    seq_type      = '{RANDOM_SEQ, RANDOM_SEQ, RANDOM_SEQ};
+    seq_type      = '{LINEAR_SEQ};
     req_rate      = '{default:25};
-    runSeq(nReadVectors,nWriteVectors,1);// last sequence flag, terminates agents
+    runSeq(nReadVectors,1);// last sequence flag, terminates agents
+    flushCache();
+    memCheck();
+    ///////////////////////////////////////////////
+     test_name    = "TEST 17 -- random d_access -- enabled translation, random flushes, validation contentions";
+    // config
+    enable_translation     = 1;
+    inv_rand_en  = 1;
+    flush_rand_en = 1;
+    seq_type     = '{RANDOM_SEQ};
+    req_rate     = '{default:25};
+    runSeq(nReadVectors);
+    flushCache();
+    memCheck();
+    ///////////////////////////////////////////////
+    test_name    = "TEST 18 -- sequential d_access -- enabled translation, random flushes, validation contentions";
+    // config
+    enable_translation     = 1;
+    inv_rand_en  = 1;
+    flush_rand_en = 1;
+    seq_type     = '{LINEAR_SEQ};
+    req_rate     = '{100,0,20};
+    runSeq(nReadVectors);
+    flushCache();
+    memCheck();
+    ///////////////////////////////////////////////
+    test_name    = "TEST 19 -- random i and d access -- enabled translation, random flushes, validation contentions";
+    // config
+    enable_translation      = 1;
+    inv_rand_en  = 1;
+    flush_rand_en = 1;
+    seq_type      = '{RANDOM_SEQ};
+    req_rate      = '{default:25};
+    runSeq(nReadVectors,1);// last sequence flag, terminates agents
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
