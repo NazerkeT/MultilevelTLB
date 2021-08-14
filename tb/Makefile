@@ -21,22 +21,30 @@ compile_flag += +cover+i_dut -incr -64 -nologo -svinputport=compat -override_tim
 sim_opts     += -64 -coverage -classdebug -voptargs="+acc"
 questa_version ?= ${QUESTASIM_VERSION}
 incdir       += ../common/
+compile_flagv += -full64 -timescale=1ns/1ps -sverilog -l log.txt -f $(src-list)
 
 build: clean
-	vlib${questa_version} $(library)
-	vlog${questa_version} -work $(library) -pedanticerrors $(src) $(compile_flag) +incdir+$(incdir)
-	touch $(library)/.build
+        vlib${questa_version} $(library)
+        vlog${questa_version} -work $(library) -pedanticerrors $(src) $(compile_flag) +incdir+$(incdir)
+        touch $(library)/.build
 
 # this starts modelsim with gui
 sim: build
-	vsim${questa_version} -lib $(library) $(toplevel) -do "do wave.do" $(sim_opts)
+        vsim${questa_version} -lib $(library) $(toplevel) -do "do wave.do" $(sim_opts)
 
 # batch mode without gui
 simc: build
-	vsim${questa_version} -lib $(library) $(toplevel) -c -do "run -all; exit" $(sim_opts)
+        vsim${questa_version} -lib $(library) $(toplevel) -c -do "run -all; exit" $(sim_opts)
 
+# vcs analysis
+buildv: clean
+        vlogan -work $(library) +incdir+$(incdir) $(compile_flagv)
+
+# vcs eloboration and simulation
+simv: buildv
+        vcs -full64 -sverilog -timescale=1ns/1ps -LDFLAGS -Wl,--no-as-needed $(library).$(toplevel) -R
 clean:
-	rm -rf $(library)
+        rm -rf $(library)
 
-.PHONY: clean simc sim build
+.PHONY: clean simc sim build simv buildv
 
