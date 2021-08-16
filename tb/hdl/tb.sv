@@ -40,7 +40,8 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
   parameter Verbose           = 0;
 
   // number of vectors per test
-  parameter nReadVectors      = 20000;
+  parameter nDataVectors      = 20000;
+  parameter nInstrVectors     = 20000;
 
 ///////////////////////////////////////////////////////////////////////////////
 // DUT signal declarations
@@ -88,7 +89,7 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
   // TB stim signals
   string test_name;
   logic clk_i, rst_ni;
-  logic [31:0] seq_num_resp;
+  logic [31:0] d_seq_num_resp, i_seq_num_resp, seq_num_resp;
   seq_t [2:0] seq_type;
   logic [2:0] seq_done;
   logic [6:0] req_rate[2:0];
@@ -120,11 +121,15 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
 ///////////////////////////////////////////////////////////////////////////////
 // helper tasks
 ///////////////////////////////////////////////////////////////////////////////
-
-  task automatic runSeq(input int nReadVectors, input logic last =1'b0);
+  let max(a,b) = (a > b) ? a : b;
+  
+  task automatic runSeq(input int nDataVectors=0, input int nInstrVectors=0, input logic last=1'b0);
     seq_last      = last;
     seq_run       = 1'b1;
-    seq_num_resp  = nReadVectors;
+    d_seq_num_resp  = nDataVectors;
+    i_seq_num_resp  = nInstrVectors;
+    seq_num_resp    = max(nDataVectors, nInstrVectors);
+    
     `APPL_WAIT_CYC(clk_i,1)
     seq_run      = 1'b0;
     `APPL_WAIT_SIG(clk_i, &seq_done)
@@ -297,7 +302,7 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
     .req_rate_i      ( req_rate[0]         ),
     .seq_type_i      ( seq_type[0]         ),
     .seq_run_i       ( seq_run             ),
-    .seq_num_resp_i  ( seq_num_resp        ),
+    .seq_num_resp_i  ( i_seq_num_resp      ),
     .seq_last_i      ( seq_last            ),
     .seq_done_o      ( seq_done[0]         ),
     // Comparison interface
@@ -325,7 +330,7 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
     .req_rate_i      ( req_rate[1]          ),
     .seq_type_i      ( seq_type[1]          ),
     .seq_run_i       ( seq_run              ),
-    .seq_num_resp_i  ( seq_num_resp         ),
+    .seq_num_resp_i  ( d_seq_num_resp       ),
     .seq_last_i      ( seq_last             ),
     .seq_done_o      ( seq_done[1]          ),
     // Comparison interface
@@ -368,11 +373,8 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
     .seq_last_i      ( seq_last             ),
     .seq_done_o      ( seq_done[2]          ),
     // DUT-MMU interface
-    .flush_o                ( flush                ),
-    .enable_translation_o   ( enable_translation   ),
-    .en_ld_st_translation_o ( en_ld_st_translation ),
     .lsu_dtlb_hit_i         ( lsu_dtlb_hit         ), // sent in the same cycle as the request if translation hits in the DTLB
-    .all_tlbs_checked_i     ( all_tlbs_checked     ), // sent in min - the same cycle, max - three cycles
+    .icache_areq_i          ( icache_req_o         ),
     // General control signals
     .priv_lvl_o             ( priv_lvl             ), 
     .ld_st_priv_lvl_o       ( ld_st_priv_lvl       ),
@@ -390,9 +392,8 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
 // ----> simulation coordinator process
 ///////////////////////////////////////////////////////////////////////////////
 
-// to-do: fix enable/disable signals for ports
-//        fix seq_types
-//        complete functions within a port
+// to-do: complete functions within a port
+//        complete tb_mem functions
 
   initial begin : p_stim
     test_name        = "";
@@ -411,8 +412,9 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
     inv_rand_en      = 0;
     flush_rand_en    = 0;
     // cache ctrl
-    flush            = 0;
-    enable_translation  = 0;
+    flush                = 0;
+    enable_translation   = 0;
+    en_ld_st_translation = 0;
 
     // print some info
     $display("TB> current configuration:");
@@ -431,209 +433,229 @@ module tb import tb_pkg::*; import riscv::*; import ariane_pkg::*; import wt_cac
     ///////////////////////////////////////////////
     test_name    = "TEST 0 -- random i_access -- enabled translation";
     // config
-    enable_translation     = 1;
+    enable_translation   = 1;
+    en_ld_st_translation = 1;
     seq_type     = '{default: RANDOM_SEQ};
     req_rate     = '{default: 7'd50};
-    runSeq(nReadVectors);
+    runSeq(0, nInstrVectors);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
     test_name    = "TEST 1 -- sequential i_access -- enabled translation";
     // config
-    enable_translation     = 0;
+    enable_translation   = 1;
+    en_ld_st_translation = 1;
     seq_type     = '{default: LINEAR_SEQ};
     req_rate     = '{default: 7'd50};
-    runSeq(nReadVectors);
+    runSeq(0, nInstrVectors);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
     test_name    = "TEST 2 -- random d_access -- enabled translation";
     // config
-    enable_translation     = 1;
+    enable_translation   = 1;
+    en_ld_st_translation = 1;
     seq_type     = '{default: RANDOM_SEQ};
     req_rate     = '{default: 7'd50};
-    runSeq(nReadVectors);
+    runSeq(nDataVectors);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
     test_name    = "TEST 3 -- sequential d_access -- enabled translation";
     // config
-    enable_translation     = 1;
+    enable_translation   = 1;
+    en_ld_st_translation = 1;
     seq_type     = '{default: LINEAR_SEQ};
     req_rate     = '{default: 7'd50};
-    runSeq(nReadVectors);
+    runSeq(nDataVectors);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
     test_name    = "TEST 4 -- random i and d access -- enabled translation";
     // config
-    enable_translation     = 1;
+    enable_translation   = 1;
+    en_ld_st_translation = 1;
     tlb_rand_en  = 1;
     mem_rand_en  = 1;
     seq_type     = '{default: RANDOM_SEQ};
     req_rate     = '{default: 7'd50};
-    runSeq(nReadVectors);
+    runSeq(nDataVectors, nInstrVectors);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
     test_name    = "TEST 5 -- random i_access -- enabled translation, validation contentions";
     // config
-    enable_translation     = 1;
+    enable_translation   = 1;
+    en_ld_st_translation = 1;
     tlb_rand_en  = 1;
     mem_rand_en  = 1;
     seq_type     = '{default: RANDOM_SEQ};
     req_rate     = '{default: 7'd50};
-    runSeq(nReadVectors);
+    runSeq(0, nInstrVectors);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
     test_name    = "TEST 6 -- sequential i_access -- enabled translation, validation contentions";
     // config
-    enable_translation     = 1;
+    enable_translation   = 1;
+    en_ld_st_translation = 1;
     inv_rand_en  = 1;
     seq_type     = '{default: LINEAR_SEQ};
     req_rate     = '{default: 7'd50};
-    runSeq(nReadVectors);
+    runSeq(0, nInstrVectors);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
     test_name    = "TEST 7 -- random d_access -- enabled translation, validation contentions";
     // config
-    enable_translation     = 0;
+    enable_translation   = 1;
+    en_ld_st_translation = 1;
     inv_rand_en  = 1;
     seq_type     = '{default: RANDOM_SEQ};
-    req_rate     = '{default: 7'd25};
-    runSeq(nReadVectors);
+    req_rate     = '{default: 7'd50};
+    runSeq(nDataVectors);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
     test_name    = "TEST 8 -- sequential d_access -- enabled translation, validation contentions";
     // config
-    enable_translation     = 1;
+    enable_translation   = 1;
+    en_ld_st_translation = 1;
     inv_rand_en  = 1;
     seq_type     = '{default: LINEAR_SEQ};
-    req_rate     = '{default: 7'd25};
-    runSeq(nReadVectors);
+    req_rate     = '{default: 7'd50};
+    runSeq(nDataVectors);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
     test_name    = "TEST 9 -- random i and d_access -- enabled translation, validation contentions";
     // config
-    enable_translation     = 1;
+    enable_translation   = 1;
+    en_ld_st_translation = 1;
     inv_rand_en  = 1;
     seq_type     = '{default: RANDOM_SEQ};
-    req_rate     = '{default: 7'd25};
-    runSeq(nReadVectors);
+    req_rate     = '{default: 7'd50};
+    runSeq(nDataVectors, nInstrVectors);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
     test_name    = "TEST 10 -- random i_access -- enabled translation, random flushes";
     // config
-    enable_translation     = 1;
-    inv_rand_en  = 0;
+    enable_translation   = 1;
+    en_ld_st_translation = 1;
+    inv_rand_en   = 0;
     flush_rand_en = 1;
-    seq_type     = '{RANDOM_SEQ};
-    req_rate     = '{100, 0, 0};
-    runSeq(0);
+    seq_type      = '{default: RANDOM_SEQ};
+    req_rate      = '{default: 7'd50};
+    runSeq(0, nInstrVectors);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
     test_name    = "TEST 11 -- sequential i_access -- enabled translation, random flushes";
     // config
-    enable_translation     = 1;
-    inv_rand_en  = 0;
+    enable_translation   = 1;
+    en_ld_st_translation = 1;
+    inv_rand_en   = 0;
     flush_rand_en = 1;
-    seq_type     = '{LINEAR_SEQ};
-    req_rate     = '{default:100};
-    seq_type     = '{LINEAR_SEQ, IDLE_SEQ, IDLE_SEQ};
+    seq_type      = '{default: LINEAR_SEQ};
+    req_rate      = '{default: 7'd50};
+    runSeq(0, nInstrVectors);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
     test_name    = "TEST 12 -- random d_access -- enabled translation, random flushes";
     // config
-    enable_translation     = 1;
-    inv_rand_en  = 0;
+    enable_translation   = 1;
+    en_ld_st_translation = 1;
+    inv_rand_en   = 0;
     flush_rand_en = 1;
-    seq_type     = '{RANDOM_SEQ};
-    req_rate     = '{75, 0, 0};
-    runSeq(0);
+    seq_type      = '{default: RANDOM_SEQ};
+    req_rate      = '{default: 7'd50};;
+    runSeq(nDataVectors);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
     test_name    = "TEST 13 -- sequential d_access -- enabled translation, random flushes";
     // config
-    enable_translation     = 1;
-    inv_rand_en  = 0;
+    enable_translation   = 1;
+    en_ld_st_translation = 1;
+    inv_rand_en   = 0;
     flush_rand_en = 1;
-    seq_type     = '{LINEAR_SEQ};
-    req_rate     = '{75, 0, 0};
-    runSeq(0);
+    seq_type      = '{default: LINEAR_SEQ};
+    req_rate      = '{default: 7'd50};
+    runSeq(nDataVectors);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
     test_name    = "TEST 14 -- random i and d access -- enabled translation, random flushes";
     // config
-    enable_translation     = 1;
-    inv_rand_en  = 0;
+    enable_translation   = 1;
+    en_ld_st_translation = 1;
+    inv_rand_en   = 0;
     flush_rand_en = 1;
-    seq_type     = '{RANDOM_SEQ};
-    req_rate     = '{default:25};
-    runSeq(nReadVectors);
+    seq_type      = '{default: RANDOM_SEQ};
+    req_rate      = '{default: 7'd50};
+    runSeq(nDataVectors, nInstrVectors);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
     test_name    = "TEST 15 -- random i_access -- enabled translation, random flushes, validation contentions";
     // config
-    enable_translation     = 1;
-    inv_rand_en  = 1;
+    enable_translation   = 1;
+    en_ld_st_translation = 1;
+    inv_rand_en   = 1;
     flush_rand_en = 1;
-    seq_type     = '{RANDOM_SEQ};
-    req_rate     = '{100,0,20};
-    runSeq(nReadVectors);
+    seq_type      = '{default: RANDOM_SEQ};
+    req_rate      = '{default: 7'd50};
+    runSeq(0, nInstrVectors);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
     test_name    = "TEST 16 -- sequential i_access -- enabled translation, random flushes, validation contentions";
     // config
-    enable_translation      = 1;
-    inv_rand_en  = 1;
+    enable_translation   = 1;
+    en_ld_st_translation = 1;
+    inv_rand_en   = 1;
     flush_rand_en = 1;
-    seq_type      = '{LINEAR_SEQ};
-    req_rate      = '{default:25};
-    runSeq(nReadVectors,1);// last sequence flag, terminates agents
+    seq_type      = '{default: LINEAR_SEQ};
+    req_rate      = '{default: 7'd50};
+    runSeq(0, nInstrVectors);// last sequence flag, terminates agents
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
      test_name    = "TEST 17 -- random d_access -- enabled translation, random flushes, validation contentions";
     // config
-    enable_translation     = 1;
-    inv_rand_en  = 1;
+    enable_translation   = 1;
+    en_ld_st_translation = 1;
+    inv_rand_en   = 1;
     flush_rand_en = 1;
-    seq_type     = '{RANDOM_SEQ};
-    req_rate     = '{default:25};
-    runSeq(nReadVectors);
+    seq_type      = '{default: RANDOM_SEQ};
+    req_rate      = '{default: 7'd50};
+    runSeq(nDataVectors);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
     test_name    = "TEST 18 -- sequential d_access -- enabled translation, random flushes, validation contentions";
     // config
-    enable_translation     = 1;
-    inv_rand_en  = 1;
+    enable_translation   = 1;
+    en_ld_st_translation = 1;
+    inv_rand_en   = 1;
     flush_rand_en = 1;
-    seq_type     = '{LINEAR_SEQ};
-    req_rate     = '{100,0,20};
-    runSeq(nReadVectors);
+    seq_type      = '{default: LINEAR_SEQ};
+    req_rate      = '{default: 7'd50};
+    runSeq(nDataVectors);
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
     test_name    = "TEST 19 -- random i and d access -- enabled translation, random flushes, validation contentions";
     // config
-    enable_translation      = 1;
-    inv_rand_en  = 1;
+    enable_translation   = 1;
+    en_ld_st_translation = 1;
+    inv_rand_en   = 1;
     flush_rand_en = 1;
-    seq_type      = '{RANDOM_SEQ};
-    req_rate      = '{default:25};
-    runSeq(nReadVectors,1);// last sequence flag, terminates agents
+    seq_type      = '{default: RANDOM_SEQ};
+    req_rate      = '{default: 7'd50};
+    runSeq(nDataVectors, nInstrVectors, 1);// last sequence flag, terminates agents
     flushCache();
     memCheck();
     ///////////////////////////////////////////////
