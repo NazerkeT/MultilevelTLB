@@ -128,9 +128,7 @@ module load_unit import ariane_pkg::*; #(
                                 state_d = ABORT_TRANSACTION_NI;
                             end else if (all_tlbs_checked_i && !dtlb_hit_i) begin // TLB miss
                                 state_d = ABORT_TRANSACTION;
-                            end else begin // waiting for a lookup completion
-                                state_d = IDLE;
-                            end
+                            end // else wait for a lookup completion in this IDLE state 
                         end
                     end else begin
                         // wait for the store buffer to train and the page offset to not match anymore

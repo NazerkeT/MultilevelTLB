@@ -96,23 +96,23 @@ module mmu import ariane_pkg::*; #(
     logic        l2_tlb_is_2M;
     logic        l2_tlb_is_1G;
     logic        l2_tlb_lu_hit;
-    logic        all_hashes_checked;
-    
-    riscv::pte_t tlb_content;
-    logic        tlb_is_2M;
-    logic        tlb_is_1G;
-    logic        tlb_lu_hit;    
+    logic        all_hashes_checked;    
 
     // Assignments
     assign itlb_lu_access = icache_areq_i.fetch_req;
     assign dtlb_lu_access = lsu_req_i;
-    assign l2_tlb_vaddr_i = (itlb_lu_access) ? icache_areq_i.fetch_vaddr : lsu_vaddr_i;
+    
+    // l2 trlb entry multiplexer that covers single cycle, double access case also.
+    // If pending dtransl-n is being served in ptw, then itransl-n is directed to l2tlb
+    // Unless otherwise, dtransl-n has higher priority for l2tlb 
+    assign l2_tlb_vaddr_i = (dtlb_lu_access && !dtlb_lu_hit && (!ptw_active || (ptw_active && walking_instr))) ? 
+                            lsu_vaddr_i : icache_areq_i.fetch_vaddr; 
     
     assign all_tlbs_checked_o = all_hashes_checked; // output assignment
     // Update tlbs
-    assign update_itlb   = (!itlb_lu_hit && tlb_lu_hit)  ? l2_tlb_content : update_ptw_itlb;
-    assign update_dtlb   = (!dtlb_lu_hit && tlb_lu_hit)  ? l2_tlb_content : update_ptw_dtlb;
-    assign update_l2_tlb = (!itlb_lu_hit && !tlb_lu_hit) ? update_ptw_itlb : update_ptw_dtlb;
+    assign update_itlb   = (!itlb_lu_hit && l2_tlb_lu_hit)  ? l2_tlb_content : update_ptw_itlb;
+    assign update_dtlb   = (!dtlb_lu_hit && l2_tlb_lu_hit)  ? l2_tlb_content : update_ptw_dtlb;
+    assign update_l2_tlb = (!itlb_lu_hit && !l2_tlb_lu_hit) ? update_ptw_itlb : update_ptw_dtlb;
     
     tlb #(
         .TLB_ENTRIES      ( INSTR_TLB_ENTRIES          ),
@@ -178,24 +178,33 @@ module mmu import ariane_pkg::*; #(
          .all_hashes_checked_o ( all_hashes_checked     )
      );
     
-    // Multiplex between different tlbs before feeding to MMU checks
-    // Update only if both tlbs miss
-    // *might change this later for possible single cycle, double request cases
-    assign tlb_lu_hit = itlb_lu_hit || dtlb_lu_hit || l2_tlb_lu_hit;
-    assign tlb_is_2M  = itlb_is_2M  || dtlb_is_2M  || l2_tlb_is_2M;
-    assign tlb_is_1G  = itlb_is_1G  || dtlb_is_1G  || l2_tlb_is_1G;
+    // Seperate wires are necessary to support independent 
+    // L1, L2 hit results in case of double access
     
-    // Multiplexing over right content
-    always_comb begin : tlb_to_mmu_interface
-        if (itlb_lu_hit) begin
-            tlb_content = itlb_content;           
-        end else if(dtlb_lu_hit) begin;
-            tlb_content = dtlb_content;           
-        end else begin
-            tlb_content = l2_tlb_content; //default  
-        end
-        
-    end
+    riscv::pte_t f_itlb_content; // final itlb content
+    logic        f_itlb_is_2M;
+    logic        f_itlb_is_1G;
+    logic        f_itlb_lu_hit;    
+    
+    // access l2tlb if only dtransl-n is being served in ptw of if there are any d access
+    assign f_itlb_content = (itlb_lu_access && !itlb_lu_hit && (!dtlb_lu_access || (ptw_active && !walking_instr))) ? 
+                            l2_tlb_content : itlb_content;    
+    assign f_itlb_is_2M   = (itlb_lu_access && !itlb_lu_hit && (!dtlb_lu_access || (ptw_active && !walking_instr))) ? 
+                            l2_tlb_is_2M   : itlb_is_2M;
+    assign f_itlb_is_1G   = (itlb_lu_access && !itlb_lu_hit && (!dtlb_lu_access || (ptw_active && !walking_instr))) ? 
+                            l2_tlb_is_1G   : itlb_is_1G;   
+    assign f_itlb_lu_hit   = (itlb_lu_access && !itlb_lu_hit && (!dtlb_lu_access || (ptw_active && !walking_instr))) ? 
+                            l2_tlb_lu_hit  : itlb_lu_hit;
+                                                            
+    riscv::pte_t f_dtlb_content; // final dtlb content
+    logic        f_dtlb_is_2M;
+    logic        f_dtlb_is_1G;
+    logic        f_dtlb_lu_hit;        
+    
+    assign f_dtlb_content = (dtlb_lu_access && !dtlb_lu_hit) ? l2_tlb_content : dtlb_content;    
+    assign f_dtlb_is_2M   = (dtlb_lu_access && !dtlb_lu_hit) ? l2_tlb_is_2M   : dtlb_is_2M;
+    assign f_dtlb_is_1G   = (dtlb_lu_access && !dtlb_lu_hit) ? l2_tlb_is_1G   : dtlb_is_1G;   
+    assign f_dtlb_lu_hit  = (dtlb_lu_access && !dtlb_lu_hit) ? l2_tlb_lu_hit  : dtlb_lu_hit;
     
     ptw  #(
         .ASID_WIDTH             ( ASID_WIDTH            ),
@@ -214,11 +223,11 @@ module mmu import ariane_pkg::*; #(
         .dtlb_update_o          ( update_ptw_dtlb       ),
 
         .itlb_access_i          ( itlb_lu_access        ),
-        .itlb_hit_i             ( tlb_lu_hit            ),
+        .itlb_hit_i             ( f_itlb_lu_hit         ),
         .itlb_vaddr_i           ( icache_areq_i.fetch_vaddr ),
 
         .dtlb_access_i          ( dtlb_lu_access        ),
-        .dtlb_hit_i             ( tlb_lu_hit            ),
+        .dtlb_hit_i             ( f_dtlb_lu_hit         ),
         .dtlb_vaddr_i           ( lsu_vaddr_i           ),
 
         .all_tlbs_checked_i     (all_hashes_checked     ),
@@ -265,8 +274,8 @@ module mmu import ariane_pkg::*; #(
         // 2. We got an access error because of insufficient permissions -> throw an access exception
         icache_areq_o.fetch_exception      = '0;
         // Check whether we are allowed to access this memory region from a fetch perspective
-        iaccess_err   = icache_areq_i.fetch_req && (((priv_lvl_i == riscv::PRIV_LVL_U) && ~tlb_content.u)
-                                                 || ((priv_lvl_i == riscv::PRIV_LVL_S) && tlb_content.u));
+        iaccess_err   = icache_areq_i.fetch_req && (((priv_lvl_i == riscv::PRIV_LVL_U) && ~f_itlb_content.u)
+                                                 || ((priv_lvl_i == riscv::PRIV_LVL_S) && f_itlb_content.u));
 
         // MMU enabled: address from TLB, request delayed until hit. Error when TLB
         // hit and no access right or TLB hit and translated address not valid (e.g.
@@ -283,11 +292,11 @@ module mmu import ariane_pkg::*; #(
             // 4K page
             icache_areq_o.fetch_paddr = {tlb_content.ppn, icache_areq_i.fetch_vaddr[11:0]};
             // Mega page
-            if (tlb_is_2M) begin
+            if (f_itlb_is_2M) begin
                 icache_areq_o.fetch_paddr[20:12] = icache_areq_i.fetch_vaddr[20:12];
             end
             // Giga page
-            if (tlb_is_1G) begin
+            if (f_itlb_is_1G) begin
                 icache_areq_o.fetch_paddr[29:12] = icache_areq_i.fetch_vaddr[29:12];
             end
 
@@ -295,7 +304,7 @@ module mmu import ariane_pkg::*; #(
             // ITLB Hit
             // --------
             // if we hit the ITLB output the request signal immediately
-            if (tlb_lu_hit) begin
+            if (f_itlb_lu_hit) begin
                 icache_areq_o.fetch_valid = icache_areq_i.fetch_req;
                 // we got an access error
                 if (iaccess_err) begin
@@ -355,7 +364,7 @@ module mmu import ariane_pkg::*; #(
     logic        dtlb_is_1G_n,    dtlb_is_1G_q;
 
     // check if we need to do translation or if we are always ready (e.g.: we are not translating anything)
-    assign lsu_dtlb_hit_o = (en_ld_st_translation_i) ? tlb_lu_hit :  1'b1;
+    assign lsu_dtlb_hit_o = (en_ld_st_translation_i) ? f_dtlb_lu_hit :  1'b1;
 
     // Wires to PMP checks
     riscv::pmp_access_t pmp_access_type;
@@ -367,11 +376,11 @@ module mmu import ariane_pkg::*; #(
         lsu_vaddr_n           = lsu_vaddr_i;
         lsu_req_n             = lsu_req_i;
         misaligned_ex_n       = misaligned_ex_i;
-        dtlb_pte_n            = tlb_content;
-        dtlb_hit_n            = tlb_lu_hit;
+        dtlb_pte_n            = f_dtlb_content;
+        dtlb_hit_n            = f_dtlb_lu_hit;
         lsu_is_store_n        = lsu_is_store_i;
-        dtlb_is_2M_n          = tlb_is_2M;
-        dtlb_is_1G_n          = tlb_is_1G;
+        dtlb_is_2M_n          = f_dtlb_is_2M;
+        dtlb_is_1G_n          = f_dtlb_is_1G;
 
         lsu_paddr_o           = lsu_vaddr_q[riscv::PLEN-1:0];
         lsu_dtlb_ppn_o        = lsu_vaddr_n[riscv::PLEN-1:12];
