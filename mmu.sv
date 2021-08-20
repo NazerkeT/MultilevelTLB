@@ -105,14 +105,34 @@ module mmu import ariane_pkg::*; #(
     // l2 trlb entry multiplexer that covers single cycle, double access case also.
     // If pending dtransl-n is being served in ptw, then itransl-n is directed to l2tlb
     // Unless otherwise, dtransl-n has higher priority for l2tlb 
-    assign l2_tlb_vaddr_i = (dtlb_lu_access && !dtlb_lu_hit && (!ptw_active || (ptw_active && walking_instr))) ? 
-                            lsu_vaddr_i : icache_areq_i.fetch_vaddr; 
+    logic  lsu_first;
+    assign lsu_first = (dtlb_lu_access && !dtlb_lu_hit && (!ptw_active || (ptw_active && walking_instr)));
+    
+    assign l2_tlb_vaddr_i = lsu_first ? lsu_vaddr_i : icache_areq_i.fetch_vaddr; 
     
     assign all_tlbs_checked_o = all_hashes_checked; // output assignment
-    // Update tlbs
-    assign update_itlb   = (!itlb_lu_hit && l2_tlb_lu_hit)  ? l2_tlb_content : update_ptw_itlb;
-    assign update_dtlb   = (!dtlb_lu_hit && l2_tlb_lu_hit)  ? l2_tlb_content : update_ptw_dtlb;
-    assign update_l2_tlb = (!itlb_lu_hit && !l2_tlb_lu_hit) ? update_ptw_itlb : update_ptw_dtlb;
+    
+    assign update_itlb   = (!itlb_lu_hit && !lsu_first && l2_tlb_lu_hit)  ? 
+                           '{
+                                valid   : l2_tlb_lu_hit,
+                                is_2M   : l2_tlb_is_2M,
+                                is_1G   : l2_tlb_is_1G,
+                                vpn     : icache_areq_i.fetch_vaddr[riscv::SV-1:12],
+                                asid    : asid_i,
+                                content : l2_tlb_content    
+                            }           : update_ptw_itlb;
+                             
+    assign update_dtlb   = (!dtlb_lu_hit && lsu_first && l2_tlb_lu_hit)   ? 
+                           '{
+                                valid   : l2_tlb_lu_hit,
+                                is_2M   : l2_tlb_is_2M,
+                                is_1G   : l2_tlb_is_1G,
+                                vpn     : lsu_vaddr_i[riscv::SV-1:12],
+                                asid    : asid_i,
+                                content : l2_tlb_content    
+                            }           : update_ptw_dtlb;
+                            
+    assign update_l2_tlb = (!l2_tlb_lu_hit && !itlb_lu_hit && (!dtlb_lu_access || dtlb_lu_hit)) ? update_ptw_itlb : update_ptw_dtlb;
     
     tlb #(
         .TLB_ENTRIES      ( INSTR_TLB_ENTRIES          ),
@@ -164,6 +184,7 @@ module mmu import ariane_pkg::*; #(
          .flush_i          ( flush_tlb_i                ),
 
          .update_i         ( update_l2_tlb              ),
+         .ptw_active_i     ( ptw_active                 ),
 
          .lu_access_i      ( itlb_lu_access || dtlb_lu_access ),
          .lu_asid_i        ( asid_i                     ),
@@ -186,25 +207,21 @@ module mmu import ariane_pkg::*; #(
     logic        f_itlb_is_1G;
     logic        f_itlb_lu_hit;    
     
-    // access l2tlb if only dtransl-n is being served in ptw of if there are any d access
-    assign f_itlb_content = (itlb_lu_access && !itlb_lu_hit && (!dtlb_lu_access || (ptw_active && !walking_instr))) ? 
-                            l2_tlb_content : itlb_content;    
-    assign f_itlb_is_2M   = (itlb_lu_access && !itlb_lu_hit && (!dtlb_lu_access || (ptw_active && !walking_instr))) ? 
-                            l2_tlb_is_2M   : itlb_is_2M;
-    assign f_itlb_is_1G   = (itlb_lu_access && !itlb_lu_hit && (!dtlb_lu_access || (ptw_active && !walking_instr))) ? 
-                            l2_tlb_is_1G   : itlb_is_1G;   
-    assign f_itlb_lu_hit   = (itlb_lu_access && !itlb_lu_hit && (!dtlb_lu_access || (ptw_active && !walking_instr))) ? 
-                            l2_tlb_lu_hit  : itlb_lu_hit;
+    // access l2tlb if only there are no d access or if l1 dtlb hits or if dtransl-n is being served in ptw
+    assign f_itlb_content = (!itlb_lu_hit && !lsu_first) ? l2_tlb_content : itlb_content;    
+    assign f_itlb_is_2M   = (!itlb_lu_hit && !lsu_first) ? l2_tlb_is_2M   : itlb_is_2M;
+    assign f_itlb_is_1G   = (!itlb_lu_hit && !lsu_first) ? l2_tlb_is_1G   : itlb_is_1G;   
+    assign f_itlb_lu_hit  = (!itlb_lu_hit && !lsu_first) ? l2_tlb_lu_hit  : itlb_lu_hit;
                                                             
     riscv::pte_t f_dtlb_content; // final dtlb content
     logic        f_dtlb_is_2M;
     logic        f_dtlb_is_1G;
     logic        f_dtlb_lu_hit;        
     
-    assign f_dtlb_content = (dtlb_lu_access && !dtlb_lu_hit) ? l2_tlb_content : dtlb_content;    
-    assign f_dtlb_is_2M   = (dtlb_lu_access && !dtlb_lu_hit) ? l2_tlb_is_2M   : dtlb_is_2M;
-    assign f_dtlb_is_1G   = (dtlb_lu_access && !dtlb_lu_hit) ? l2_tlb_is_1G   : dtlb_is_1G;   
-    assign f_dtlb_lu_hit  = (dtlb_lu_access && !dtlb_lu_hit) ? l2_tlb_lu_hit  : dtlb_lu_hit;
+    assign f_dtlb_content = (!dtlb_lu_hit) ? l2_tlb_content : dtlb_content;    
+    assign f_dtlb_is_2M   = (!dtlb_lu_hit) ? l2_tlb_is_2M   : dtlb_is_2M;
+    assign f_dtlb_is_1G   = (!dtlb_lu_hit) ? l2_tlb_is_1G   : dtlb_is_1G;   
+    assign f_dtlb_lu_hit  = (!dtlb_lu_hit) ? l2_tlb_lu_hit  : dtlb_lu_hit;
     
     ptw  #(
         .ASID_WIDTH             ( ASID_WIDTH            ),
@@ -290,7 +307,7 @@ module mmu import ariane_pkg::*; #(
             icache_areq_o.fetch_valid = 1'b0;
 
             // 4K page
-            icache_areq_o.fetch_paddr = {tlb_content.ppn, icache_areq_i.fetch_vaddr[11:0]};
+            icache_areq_o.fetch_paddr = {f_itlb_content.ppn, icache_areq_i.fetch_vaddr[11:0]};
             // Mega page
             if (f_itlb_is_2M) begin
                 icache_areq_o.fetch_paddr[20:12] = icache_areq_i.fetch_vaddr[20:12];
@@ -400,7 +417,7 @@ module mmu import ariane_pkg::*; #(
             lsu_valid_o = 1'b0;
             // 4K page
             lsu_paddr_o = {dtlb_pte_q.ppn, lsu_vaddr_q[11:0]};
-            lsu_dtlb_ppn_o = tlb_content.ppn;
+            lsu_dtlb_ppn_o = f_dtlb_content.ppn;
             // Mega page
             if (dtlb_is_2M_q) begin
               lsu_paddr_o[20:12] = lsu_vaddr_q[20:12];

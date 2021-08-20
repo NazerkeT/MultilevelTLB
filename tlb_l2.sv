@@ -30,6 +30,7 @@ module tlb_l2 import ariane_pkg::*; #(
     input  logic                    flush_i,  // Flush signal
     // Update TLB
     input  tlb_update_t             update_i,
+    input  logic                    ptw_active_i, 
     // Lookup signals
     input  logic                    lu_access_i,
     input  logic [ASID_WIDTH-1:0]   lu_asid_i,
@@ -87,8 +88,10 @@ module tlb_l2 import ariane_pkg::*; #(
         
         hash_ord_n = hash_ord_q;
         hit_flag   = 1'b0;
-                  
-        if (lu_access_i) begin
+        
+        // if ptw is in progress do not update counters
+        // these contraints are necessary to keep valid counter values
+        if (lu_access_i && !ptw_active_i) begin
             for (int unsigned i = 0; i < TLB_WAYS; i++) begin                             
                 if (tags_q[ind][i].valid && ((lu_asid_i == tags_q[ind][i].asid) || content_q[ind][i].g) && vpn[2][8:`K] == tags_q[ind][i].vpn2[8:`K]) begin
                     if (tags_q[ind][i].is_1G) begin
