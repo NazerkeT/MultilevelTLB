@@ -1,10 +1,11 @@
 # Multilevel TLB
 
-Multilevel Translation Lookaside Buffer (TLB) implementation workspace for (CVA6) Ariane Core. <br />
+Multilevel Translation Lookaside Buffer (TLB) implementation workspace for (CVA6) Ariane Core. This constitutes from the existing L1 TLBs for instruction and data interfaces, also new shared L2 TLB for both request types. Upon translation request and hit in one of the TLBs, result is avalable either in the same cycle, or in the third cycle at the longest. This will depend on the page size of the requested address. <br />  <br />
+
 More is to come, keep tuned! ;)
 
 General tasks:
-*   L2 TLB design (done);
+*   L2 TLB design (done -> multi-cycle, configurable hash-rehash structure);
 *   Integrating L2 TLB to MMU (done);
 *   Module and MMU level simulations (done -> bugs fixed and stable results);
 *   Updating PTW (done);
@@ -15,7 +16,7 @@ General tasks:
 *   Test in OpenPiton (done -> successful compilation of the "Hello, world!" program);
 
 Future taks to be completed:
-*   FSM based implementation of L2 TLB flush logic;
+*   FSM based implementation of the L2 TLB flush logic;
 *   SRAM implementation of the L2 TLB memory;
 *   Testing virtual memory performance with targeted benchmarks;
 *   Contribution to the Ariane;
