@@ -29,6 +29,11 @@ Future tasks to be completed:
 *   Testing virtual memory performance with targeted benchmarks;
 *   Contribution to the Ariane;
 
+Tools used:
+*   Verilator'4.014 and RISC-V-GNU-Toolchain for core simulation in OpenPiton;
+*   Vivado'2017.4 Simulator for visual debug of the MMU and standalone L2 TLB;
+*   VCS was attempted as part of the testbench preparation;
+
 Useful links:
 *   GitHub page of the core: https://github.com/openhwgroup/cva6
 *   Documentation of the core: https://cva6.readthedocs.io/en/latest/
