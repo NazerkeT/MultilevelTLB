@@ -116,7 +116,7 @@ module mmu #(
                             };
                              
     assign update_dtlb   = '{
-                                valid   : l2_tlb_lu_hit && !dtlb_lu_hit && dtlb_access_i,
+                                valid   : l2_tlb_lu_hit && !dtlb_lu_hit && dtlb_lu_access,
                                 is_2M   : l2_tlb_is_2M,
                                 is_1G   : l2_tlb_is_1G,
                                 vpn     : lsu_vaddr_i[38:12],
