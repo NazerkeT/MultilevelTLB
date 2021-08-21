@@ -6,7 +6,7 @@ It is a repository dedicated to the summer GSoC'21 project - Multilevel Translat
 A multilevel TLB based virtual memory is the industry standard for many application class CPUs, so accordingly was a compelling project to discover :) Nevertheless, future tasks are equally significant milestones, as well, and are to be continued apart from the GSoC scope.  <br />
 
 General tasks:
-*   L2 TLB design (done -> multi-cycle, configurable hash-rehash structure);
+*   L2 TLB design (done -> multi-cycle, size-configurable hash-rehash structure);
 *   Integrating L2 TLB to MMU (done);
 *   Module and MMU level simulations (done -> bugs fixed and stable results);
 *   Updating PTW (done);
