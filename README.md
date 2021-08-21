@@ -23,7 +23,7 @@ General tasks:
 *   Testbenching (partially completed) ;
 *   Test in OpenPiton (done -> successful compilation of the "Hello, world!" program);
 
-Future taks to be completed:
+Future tasks to be completed:
 *   FSM based implementation of the L2 TLB flush logic;
 *   SRAM implementation of the L2 TLB memory;
 *   Testing virtual memory performance with targeted benchmarks;
