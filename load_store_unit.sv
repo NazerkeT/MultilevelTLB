@@ -12,8 +12,9 @@
 // Date: 19.04.2017
 // Description: Load Store Unit, handles address calculation and memory interface signals
 
+import ariane_pkg::*;
 
-module load_store_unit import ariane_pkg::*; #(
+module load_store_unit #(
     parameter int unsigned ASID_WIDTH = 1,
     parameter ariane_pkg::ariane_cfg_t ArianeCfg = ariane_pkg::ArianeDefaultConfig
 )(
@@ -28,12 +29,12 @@ module load_store_unit import ariane_pkg::*; #(
     input  logic                     lsu_valid_i,              // Input is valid
 
     output logic [TRANS_ID_BITS-1:0] load_trans_id_o,          // ID of scoreboard entry at which to write back
-    output riscv::xlen_t             load_result_o,
+    output logic [63:0]              load_result_o,
     output logic                     load_valid_o,
     output exception_t               load_exception_o,         // to WB, signal exception status LD exception
 
     output logic [TRANS_ID_BITS-1:0] store_trans_id_o,         // ID of scoreboard entry at which to write back
-    output riscv::xlen_t             store_result_o,
+    output logic [63:0]              store_result_o,
     output logic                     store_valid_o,
     output exception_t               store_exception_o,        // to WB, signal exception status ST exception
 
@@ -52,10 +53,8 @@ module load_store_unit import ariane_pkg::*; #(
     input  riscv::priv_lvl_t         ld_st_priv_lvl_i,         // From CSR register file
     input  logic                     sum_i,                    // From CSR register file
     input  logic                     mxr_i,                    // From CSR register file
-    input  logic [riscv::PPNW-1:0]   satp_ppn_i,               // From CSR register file
+    input  logic [43:0]              satp_ppn_i,               // From CSR register file
     input  logic [ASID_WIDTH-1:0]    asid_i,                   // From CSR register file
-    input  logic [ASID_WIDTH-1:0]    asid_to_be_flushed_i,
-    input  logic [riscv::VLEN-1:0]   vaddr_to_be_flushed_i,
     input  logic                     flush_tlb_i,
     // Performance counters
     output logic                     itlb_miss_o,
@@ -65,13 +64,9 @@ module load_store_unit import ariane_pkg::*; #(
     input  dcache_req_o_t [2:0]      dcache_req_ports_i,
     output dcache_req_i_t [2:0]      dcache_req_ports_o,
     input  logic                     dcache_wbuffer_empty_i,
-    input  logic                     dcache_wbuffer_not_ni_i,
     // AMO interface
     output amo_req_t                 amo_req_o,
-    input  amo_resp_t                amo_resp_i,
-    // PMP
-    input  riscv::pmpcfg_t [15:0]    pmpcfg_i,
-    input  logic [15:0][riscv::PLEN-3:0] pmpaddr_i
+    input  amo_resp_t                amo_resp_i
 );
     // data is misaligned
     logic data_misaligned;
@@ -90,14 +85,14 @@ module load_store_unit import ariane_pkg::*; #(
     // ------------------------------
     // virtual address as calculated by the AGU in the first cycle
     logic [riscv::VLEN-1:0]   vaddr_i;
-    riscv::xlen_t             vaddr_xlen;
+    logic [63:0]              vaddr64;
     logic                     overflow;
     logic [7:0]               be_i;
 
-    assign vaddr_xlen = $unsigned($signed(fu_data_i.imm) + $signed(fu_data_i.operand_a));
-    assign vaddr_i = vaddr_xlen[riscv::VLEN-1:0];
-    // we work with SV39 or SV32, so if VM is enabled, check that all bits [XLEN-1:38] or [XLEN-1:31] are equal
-    assign overflow = !((&vaddr_xlen[riscv::XLEN-1:riscv::SV-1]) == 1'b1 || (|vaddr_xlen[riscv::XLEN-1:riscv::SV-1]) == 1'b0);
+    assign vaddr64 = $unsigned($signed(fu_data_i.imm) + $signed(fu_data_i.operand_a));
+    assign vaddr_i = vaddr64[riscv::VLEN-1:0];
+    // we work with SV39, so if VM is enabled, check that all bits [64:riscv::38] are equal
+    assign overflow = !((&vaddr64[63:riscv::VLEN-1]) == 1'b1 || (|vaddr64[63:riscv::VLEN-1]) == 1'b0);
 
     logic                     st_valid_i;
     logic                     ld_valid_i;
@@ -111,15 +106,14 @@ module load_store_unit import ariane_pkg::*; #(
     logic [riscv::PLEN-1:0]   mmu_paddr;
     exception_t               mmu_exception;
     logic                     dtlb_hit;
-    logic [riscv::PPNW-1:0]   dtlb_ppn;
     logic                     all_tlbs_checked;
 
     logic                     ld_valid;
     logic [TRANS_ID_BITS-1:0] ld_trans_id;
-    riscv::xlen_t             ld_result;
+    logic [63:0]              ld_result;
     logic                     st_valid;
     logic [TRANS_ID_BITS-1:0] st_trans_id;
-    riscv::xlen_t             st_result;
+    logic [63:0]              st_result;
 
     logic [11:0]              page_offset;
     logic                     page_offset_matches;
@@ -131,36 +125,31 @@ module load_store_unit import ariane_pkg::*; #(
     // -------------------
     // MMU e.g.: TLBs/PTW
     // -------------------
-//    mmu #(
-//        .INSTR_TLB_ENTRIES      ( 16                     ),
-//        .DATA_TLB_ENTRIES       ( 16                     ),
-//        .ASID_WIDTH             ( ASID_WIDTH             ),
-//        .ArianeCfg              ( ArianeCfg              )
-//    ) i_mmu (
-//        // misaligned bypass
-//        .misaligned_ex_i        ( misaligned_exception   ),
-//        .lsu_is_store_i         ( st_translation_req     ),
-//        .lsu_req_i              ( translation_req        ),
-//        .lsu_vaddr_i            ( mmu_vaddr              ),
-//        .lsu_valid_o            ( translation_valid      ),
-//        .lsu_paddr_o            ( mmu_paddr              ),
-//        .lsu_exception_o        ( mmu_exception          ),
-//        .lsu_dtlb_hit_o         ( dtlb_hit               ), // send in the same cycle as the request
-//        .lsu_dtlb_ppn_o         ( dtlb_ppn               ), // send in the same cycle as the request
-//        // multi-level tlb lookup completion
-//        .all_tlbs_checked_o     ( all_tlbs_checked       ),                         
-//        // connecting PTW to D$ IF
-//        .req_port_i             ( dcache_req_ports_i [0] ),
-//        .req_port_o             ( dcache_req_ports_o [0] ),
-//        // icache address translation requests
-//        .icache_areq_i          ( icache_areq_i          ),
-//        .asid_to_be_flushed_i,
-//        .vaddr_to_be_flushed_i,
-//        .icache_areq_o          ( icache_areq_o          ),
-//        .pmpcfg_i,
-//        .pmpaddr_i,
-//        .*
-//    );
+    mmu #(
+        .INSTR_TLB_ENTRIES      ( 16                     ),
+        .DATA_TLB_ENTRIES       ( 16                     ),
+        .ASID_WIDTH             ( ASID_WIDTH             ),
+        .ArianeCfg              ( ArianeCfg              )
+    ) i_mmu (
+            // misaligned bypass
+        .misaligned_ex_i        ( misaligned_exception   ),
+        .lsu_is_store_i         ( st_translation_req     ),
+        .lsu_req_i              ( translation_req        ),
+        .lsu_vaddr_i            ( mmu_vaddr              ),
+        .lsu_valid_o            ( translation_valid      ),
+        .lsu_paddr_o            ( mmu_paddr              ),
+        .lsu_exception_o        ( mmu_exception          ),
+        .lsu_dtlb_hit_o         ( dtlb_hit               ), // send in the same cycle as the request
+        // multi-level tlb lookup completion
+        .all_tlbs_checked_o     ( all_tlbs_checked       ), 
+        // connecting PTW to D$ IF
+        .req_port_i             ( dcache_req_ports_i [0] ),
+        .req_port_o             ( dcache_req_ports_o [0] ),
+        // icache address translation requests
+        .icache_areq_i          ( icache_areq_i          ),
+        .icache_areq_o          ( icache_areq_o          ),
+        .*
+    );
     logic store_buffer_empty;
     // ------------------
     // Store Unit
@@ -189,7 +178,6 @@ module load_store_unit import ariane_pkg::*; #(
         .paddr_i               ( mmu_paddr            ),
         .ex_i                  ( mmu_exception        ),
         .dtlb_hit_i            ( dtlb_hit             ),
-        .all_tlbs_checked_i    ( all_tlbs_checked     ), 
         // Load Unit
         .page_offset_i         ( page_offset          ),
         .page_offset_matches_o ( page_offset_matches  ),
@@ -221,7 +209,6 @@ module load_store_unit import ariane_pkg::*; #(
         .paddr_i               ( mmu_paddr            ),
         .ex_i                  ( mmu_exception        ),
         .dtlb_hit_i            ( dtlb_hit             ),
-        .dtlb_ppn_i            ( dtlb_ppn             ),
         .all_tlbs_checked_i    ( all_tlbs_checked     ), 
         // to store unit
         .page_offset_o         ( page_offset          ),
@@ -230,7 +217,7 @@ module load_store_unit import ariane_pkg::*; #(
         // to memory arbiter
         .req_port_i            ( dcache_req_ports_i [1] ),
         .req_port_o            ( dcache_req_ports_o [1] ),
-        .dcache_wbuffer_not_ni_i,
+        .dcache_wbuffer_empty_i,
         .commit_tran_id_i,
         .*
     );
@@ -304,8 +291,8 @@ module load_store_unit import ariane_pkg::*; #(
     always_comb begin : data_misaligned_detection
 
         misaligned_exception = {
-            {riscv::XLEN{1'b0}},
-            {riscv::XLEN{1'b0}},
+            64'b0,
+            64'b0,
             1'b0
         };
 
@@ -349,14 +336,14 @@ module load_store_unit import ariane_pkg::*; #(
             if (lsu_ctrl.fu == LOAD) begin
                 misaligned_exception = {
                     riscv::LD_ADDR_MISALIGNED,
-                    {{riscv::XLEN-riscv::VLEN{1'b0}},lsu_ctrl.vaddr},
+                    {{64-riscv::VLEN{1'b0}},lsu_ctrl.vaddr},
                     1'b1
                 };
 
             end else if (lsu_ctrl.fu == STORE) begin
                 misaligned_exception = {
                     riscv::ST_ADDR_MISALIGNED,
-                    {{riscv::XLEN-riscv::VLEN{1'b0}},lsu_ctrl.vaddr},
+                    {{64-riscv::VLEN{1'b0}},lsu_ctrl.vaddr},
                     1'b1
                 };
             end
@@ -367,14 +354,14 @@ module load_store_unit import ariane_pkg::*; #(
             if (lsu_ctrl.fu == LOAD) begin
                 misaligned_exception = {
                     riscv::LD_ACCESS_FAULT,
-                    {{riscv::XLEN-riscv::VLEN{1'b0}},lsu_ctrl.vaddr},
+                    {{64-riscv::VLEN{1'b0}},lsu_ctrl.vaddr},
                     1'b1
                 };
 
             end else if (lsu_ctrl.fu == STORE) begin
                 misaligned_exception = {
                     riscv::ST_ACCESS_FAULT,
-                    {{riscv::XLEN-riscv::VLEN{1'b0}},lsu_ctrl.vaddr},
+                    {{64-riscv::VLEN{1'b0}},lsu_ctrl.vaddr},
                     1'b1
                 };
             end
@@ -387,7 +374,7 @@ module load_store_unit import ariane_pkg::*; #(
     // new data arrives here
     lsu_ctrl_t lsu_req_i;
 
-    assign lsu_req_i = {lsu_valid_i, vaddr_i, overflow, {{64-riscv::XLEN{1'b0}}, fu_data_i.operand_b}, be_i, fu_data_i.fu, fu_data_i.operator, fu_data_i.trans_id};
+    assign lsu_req_i = {lsu_valid_i, vaddr_i, overflow, fu_data_i.operand_b, be_i, fu_data_i.fu, fu_data_i.operator, fu_data_i.trans_id};
 
     lsu_bypass lsu_bypass_i (
         .lsu_req_i          ( lsu_req_i   ),
@@ -412,7 +399,7 @@ endmodule
 // the LSU control should sample it and store it for later application to the units. It does so, by storing it in a
 // two element FIFO. This is necessary as we only know very late in the cycle whether the load/store will succeed (address check,
 // TLB hit mainly). So we better unconditionally allow another request to arrive and store this request in case we need to.
-module lsu_bypass import ariane_pkg::*; (
+module lsu_bypass (
     input  logic      clk_i,
     input  logic      rst_ni,
     input  logic      flush_i,

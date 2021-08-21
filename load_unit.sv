@@ -26,7 +26,7 @@ module load_unit import ariane_pkg::*; #(
     // load unit output port
     output logic                     valid_o,
     output logic [TRANS_ID_BITS-1:0] trans_id_o,
-    output riscv::xlen_t             result_o,
+    output logic [63:0]              result_o,
     output exception_t               ex_o,
     // MMU -> Address Translation
     output logic                     translation_req_o,   // request address translation
@@ -34,7 +34,6 @@ module load_unit import ariane_pkg::*; #(
     input  logic [riscv::PLEN-1:0]   paddr_i,             // physical address in
     input  exception_t               ex_i,                // exception which may has happened earlier. for example: mis-aligned exception
     input  logic                     dtlb_hit_i,          // hit on the dtlb, send in the same cycle as the request
-    input  logic [riscv::PPNW-1:0]   dtlb_ppn_i,          // ppn on the dtlb, send in the same cycle as the request
     input  logic                     all_tlbs_checked_i,   // multi-level tlb lookup completion
     // address checker
     output logic [11:0]              page_offset_o,
@@ -44,10 +43,10 @@ module load_unit import ariane_pkg::*; #(
     // D$ interface
     input dcache_req_o_t             req_port_i,
     output dcache_req_i_t            req_port_o,
-    input  logic                     dcache_wbuffer_not_ni_i
+    input  logic                     dcache_wbuffer_empty_i
 );
     enum logic [3:0] { IDLE, WAIT_GNT, SEND_TAG, WAIT_PAGE_OFFSET,
-                       ABORT_TRANSACTION, ABORT_TRANSACTION_NI, WAIT_TRANSLATION, WAIT_FLUSH,
+                       ABORT_TRANSACTION, ABORT_TRANSACTION_NC, WAIT_TRANSLATION, WAIT_FLUSH,
                        WAIT_WB_EMPTY
                      } state_d, state_q;
     // in order to decouple the response interface from the request interface we need a
@@ -74,19 +73,16 @@ module load_unit import ariane_pkg::*; #(
     assign req_port_o.address_tag   = paddr_i[ariane_pkg::DCACHE_TAG_WIDTH     +
                                               ariane_pkg::DCACHE_INDEX_WIDTH-1 :
                                               ariane_pkg::DCACHE_INDEX_WIDTH];
-    // directly forward exception fields (valid bit is set below)
-    assign ex_o.cause = ex_i.cause;
-    assign ex_o.tval  = ex_i.tval;
+    // directly output an exception
+    assign ex_o = ex_i;
 
-    // Check that NI operations follow the necessary conditions
-    logic paddr_ni;
-    logic not_commit_time;
-    logic inflight_stores;
-    logic stall_ni;
-    assign paddr_ni = is_inside_nonidempotent_regions(ArianeCfg, {dtlb_ppn_i,12'd0});
-    assign not_commit_time = commit_tran_id_i != lsu_ctrl_i.trans_id;
-    assign inflight_stores = (!dcache_wbuffer_not_ni_i || !store_buffer_empty_i);
-    assign stall_ni = (inflight_stores || not_commit_time) && paddr_ni;
+    logic stall_nc;  // stall because of non-empty WB and address within non-cacheable region.
+    // should we stall the request e.g.: is it withing a non-cacheable region
+    // and the write buffer (in the cache and in the core) is not empty so that we don't forward anything
+    // from the write buffer (e.g. it would essentially be cached).
+    assign stall_nc = (~(dcache_wbuffer_empty_i | store_buffer_empty_i) & is_inside_cacheable_regions(ArianeCfg, paddr_i))
+                    // this guards the load to be executed non-speculatively (we wait until our transaction id is on port 0
+                    | (commit_tran_id_i != lsu_ctrl_i.trans_id & is_inside_nonidempotent_regions(ArianeCfg, paddr_i));
 
     // ---------------
     // Load Control
@@ -119,16 +115,16 @@ module load_unit import ariane_pkg::*; #(
                         if (!req_port_i.data_gnt) begin
                             state_d = WAIT_GNT;
                         end else begin
-                            if (dtlb_hit_i && !stall_ni) begin
+                            if (dtlb_hit_i && !stall_nc) begin
                                 // we got a grant and a hit on the DTLB so we can send the tag in the next cycle
                                 state_d = SEND_TAG;
                                 pop_ld_o = 1'b1;
                             // translation valid but this is to NC and the WB is not yet empty.
-                            end else if (dtlb_hit_i && stall_ni) begin
-                                state_d = ABORT_TRANSACTION_NI;
-                            end else if (all_tlbs_checked_i && !dtlb_hit_i) begin // TLB miss
+                            end else if (dtlb_hit_i && stall_nc) begin
+                                state_d = ABORT_TRANSACTION_NC;
+                            end else if (all_tlbs_checked_i && !dtlb_hit_i) begin
                                 state_d = ABORT_TRANSACTION;
-                            end // else wait for a lookup completion in this IDLE state 
+                            end
                         end
                     end else begin
                         // wait for the store buffer to train and the page offset to not match anymore
@@ -148,17 +144,17 @@ module load_unit import ariane_pkg::*; #(
             // abort the previous request - free the D$ arbiter
             // we are here because of a TLB miss, we need to abort the current request and give way for the
             // PTW walker to satisfy the TLB miss
-            ABORT_TRANSACTION, ABORT_TRANSACTION_NI: begin
+            ABORT_TRANSACTION, ABORT_TRANSACTION_NC: begin
                 req_port_o.kill_req  = 1'b1;
                 req_port_o.tag_valid = 1'b1;
                 // either re-do the request or wait until the WB is empty (depending on where we came from).
-                state_d = (state_q == ABORT_TRANSACTION_NI) ? WAIT_WB_EMPTY :  WAIT_TRANSLATION;
+                state_d = (state_q == ABORT_TRANSACTION_NC) ? WAIT_WB_EMPTY :  WAIT_TRANSLATION;
             end
 
             // Wait until the write-back buffer is empty in the data cache.
             WAIT_WB_EMPTY: begin
                 // the write buffer is empty, so lets go and re-do the translation.
-                if (dcache_wbuffer_not_ni_i) state_d = WAIT_TRANSLATION;
+                if (dcache_wbuffer_empty_i) state_d = WAIT_TRANSLATION;
             end
 
             WAIT_TRANSLATION: begin
@@ -176,12 +172,12 @@ module load_unit import ariane_pkg::*; #(
                 // we finally got a data grant
                 if (req_port_i.data_gnt) begin
                     // so we send the tag in the next cycle
-                    if (dtlb_hit_i && !stall_ni) begin
+                    if (dtlb_hit_i && !stall_nc) begin
                         state_d = SEND_TAG;
                         pop_ld_o = 1'b1;
                     // translation valid but this is to NC and the WB is not yet empty.
-                    end else if (dtlb_hit_i && stall_ni) begin
-                        state_d = ABORT_TRANSACTION_NI;
+                    end else if (dtlb_hit_i && stall_nc) begin
+                        state_d = ABORT_TRANSACTION_NC;
                     end else begin
                     // should we not have hit on the TLB abort this transaction an retry later
                         state_d = ABORT_TRANSACTION;
@@ -207,13 +203,13 @@ module load_unit import ariane_pkg::*; #(
                             state_d = WAIT_GNT;
                         end else begin
                             // we got a grant so we can send the tag in the next cycle
-                            if (dtlb_hit_i && !stall_ni) begin
+                            if (dtlb_hit_i && !stall_nc) begin
                                 // we got a grant and a hit on the DTLB so we can send the tag in the next cycle
                                 state_d = SEND_TAG;
                                 pop_ld_o = 1'b1;
                             // translation valid but this is to NC and the WB is not yet empty.
-                            end else if (dtlb_hit_i && stall_ni) begin
-                                state_d = ABORT_TRANSACTION_NI;
+                            end else if (dtlb_hit_i && stall_nc) begin
+                                state_d = ABORT_TRANSACTION_NC;
                             end else begin
                                 state_d = ABORT_TRANSACTION;// we missed on the TLB -> wait for the translation
                             end
@@ -267,8 +263,7 @@ module load_unit import ariane_pkg::*; #(
     // ---------------
     // decoupled rvalid process
     always_comb begin : rvalid_output
-        valid_o    = 1'b0;
-        ex_o.valid = 1'b0;
+        valid_o = 1'b0;
         // output the queue data directly, the valid signal is set corresponding to the process above
         trans_id_o = load_data_q.trans_id;
         // we got an rvalid and are currently not flushing and not aborting the request
@@ -276,13 +271,9 @@ module load_unit import ariane_pkg::*; #(
             // we killed the request
             if(!req_port_o.kill_req)
                 valid_o = 1'b1;
-            // the output is also valid if we got an exception. An exception arrives one cycle after
-            // dtlb_hit_i is asserted, i.e. when we are in SEND_TAG. Otherwise, the exception
-            // corresponds to the next request that is already being translated (see below).
-            if (ex_i.valid && (state_q == SEND_TAG)) begin
-                valid_o    = 1'b1;
-                ex_o.valid = 1'b1;
-            end
+            // the output is also valid if we got an exception
+            if (ex_i.valid)
+                valid_o = 1'b1;
         end
         // an exception occurred during translation (we need to check for the valid flag because we could also get an
         // exception from the store unit)
@@ -291,7 +282,6 @@ module load_unit import ariane_pkg::*; #(
         // round in the load FSM
         if (valid_i && ex_i.valid && !req_port_i.data_rvalid) begin
             valid_o    = 1'b1;
-            ex_o.valid = 1'b1;
             trans_id_o = lsu_ctrl_i.trans_id;
         // if we are waiting for the translation to finish do not give a valid signal yet
         end else if (state_q == WAIT_TRANSLATION) begin
@@ -363,10 +353,10 @@ module load_unit import ariane_pkg::*; #(
     // result mux
     always_comb begin
         unique case (load_data_q.operator)
-            ariane_pkg::LW, ariane_pkg::LWU, ariane_pkg::FLW:    result_o = {{riscv::XLEN-32{sign_bit}}, shifted_data[31:0]};
-            ariane_pkg::LH, ariane_pkg::LHU, ariane_pkg::FLH:    result_o = {{riscv::XLEN-32+16{sign_bit}}, shifted_data[15:0]};
-            ariane_pkg::LB, ariane_pkg::LBU, ariane_pkg::FLB:    result_o = {{riscv::XLEN-32+24{sign_bit}}, shifted_data[7:0]};
-            default:    result_o = shifted_data[riscv::XLEN-1:0];
+            ariane_pkg::LW, ariane_pkg::LWU, ariane_pkg::FLW:    result_o = {{32{sign_bit}}, shifted_data[31:0]};
+            ariane_pkg::LH, ariane_pkg::LHU, ariane_pkg::FLH:    result_o = {{48{sign_bit}}, shifted_data[15:0]};
+            ariane_pkg::LB, ariane_pkg::LBU, ariane_pkg::FLB:    result_o = {{56{sign_bit}}, shifted_data[7:0]};
+            default:    result_o = shifted_data;
         endcase
     end
 

@@ -20,8 +20,8 @@
 //////////////////////////////////////////////////////////////////////////////////
 
 module tlb_l2 import ariane_pkg::*; #(
-      parameter int unsigned TLB_SETS    = 8,
-      parameter int unsigned TLB_WAYS    = 2,
+      parameter int unsigned TLB_SETS    = 16,
+      parameter int unsigned TLB_WAYS    = 8,
       parameter int unsigned ASID_WIDTH  = 1,
       parameter int unsigned PAGE_LEVELS = 3
   )(
@@ -50,7 +50,7 @@ module tlb_l2 import ariane_pkg::*; #(
     // SV39 defines three levels of page tables
     struct packed {
       logic [ASID_WIDTH-1:0] asid;
-      logic [riscv::VPN2:0]  vpn2;
+      logic [8:0]  vpn2;
       logic [8:0]            vpn1;
       logic [8:0]            vpn0;
       logic                  is_2M;
@@ -135,7 +135,6 @@ module tlb_l2 import ariane_pkg::*; #(
     
     logic asid_to_be_flushed_is0;   // indicates that the ASID provided by SFENCE.VMA (rs2)is 0, active high
     logic vaddr_to_be_flushed_is0;  // indicates that the VADDR provided by SFENCE.VMA (rs1)is 0, active high
-    logic [TLB_SETS-1:0][TLB_WAYS-1:0] vaddr_vpn0_match, vaddr_vpn1_match,vaddr_vpn2_match; 
     
     assign asid_to_be_flushed_is0  = ~(|asid_to_be_flushed_i);
     assign vaddr_to_be_flushed_is0 = ~(|vaddr_to_be_flushed_i);
@@ -150,33 +149,23 @@ module tlb_l2 import ariane_pkg::*; #(
             
         // traversing all entries is inevitable, because of 4 possible flushes
         for (int unsigned i = 0; i < TLB_SETS; i++) begin
-                for (int unsigned j = 0; j < TLB_WAYS; j++) begin
-            
-                    vaddr_vpn0_match[i][j] = (vaddr_to_be_flushed_i[20:12] == tags_q[i][j].vpn0);
-                    vaddr_vpn1_match[i][j] = (vaddr_to_be_flushed_i[29:21] == tags_q[i][j].vpn1);
-                    vaddr_vpn2_match[i][j] = (vaddr_to_be_flushed_i[30+riscv::VPN2:30] == tags_q[i][j].vpn2);
-            
+                for (int unsigned j = 0; j < TLB_WAYS; j++) begin            
                         if (flush_i) begin
                             // invalidate logic
-                            // flush everything if ASID is 0 and vaddr is 0 ("SFENCE.VMA x0 x0" case)
-                            if (asid_to_be_flushed_is0 && vaddr_to_be_flushed_is0 )
+                            if (lu_asid_i == 1'b0) // flush everything if ASID is 0
                                 tags_n[i][j].valid = 1'b0;
-                            // flush vaddr in all addressing space ("SFENCE.VMA vaddr x0" case), it should happen only for leaf pages
-                            else if (asid_to_be_flushed_is0 && ((vaddr_vpn0_match[i][j] && vaddr_vpn1_match[i][j] && vaddr_vpn2_match[i][j]) || (vaddr_vpn2_match[i][j] && tags_q[i][j].is_1G) || (vaddr_vpn1_match[i][j] && vaddr_vpn2_match[i][j] && tags_q[i][j].is_2M) ) && (~vaddr_to_be_flushed_is0))
-                                tags_n[i][j].valid = 1'b0;
-                            // the entry is flushed if it's not global and asid and vaddr both matches with the entry to be flushed ("SFENCE.VMA vaddr asid" case)
-                            else if ((!content_q[i][j].g) && ((vaddr_vpn0_match[i][j] && vaddr_vpn1_match[i][j] && vaddr_vpn2_match[i][j]) || (vaddr_vpn2_match[i][j] && tags_q[i][j].is_1G) || (vaddr_vpn1_match[i][j] && vaddr_vpn2_match[i][j] && tags_q[i][j].is_2M)) && (asid_to_be_flushed_i == tags_q[i][j].asid) && (!vaddr_to_be_flushed_is0) && (!asid_to_be_flushed_is0))
-                                tags_n[i][j].valid = 1'b0;
-                            // the entry is flushed if it's not global, and the asid matches and vaddr is 0. ("SFENCE.VMA 0 asid" case)
-                            else if ((!content_q[i][j].g) && (vaddr_to_be_flushed_is0) && (asid_to_be_flushed_i == tags_q[i][j].asid) && (!asid_to_be_flushed_is0))
+                            else if (lu_asid_i == tags_q[i][j].asid) // just flush entries from this ASID
                                 tags_n[i][j].valid = 1'b0;
                         // normal replacement
                         // compare vpns for all possible set indices with respect to page size
-                        end else if (update_i.valid && ((update_i.is_1G && (i == update_i.vpn[17+`K:18])) || (update_i.is_2M && (i == update_i.vpn[8+`K:9])) || (!update_i.is_1G && !update_i.is_2M && (i == update_i.vpn[`K-1:0]))) && replace_en[i][j]) begin
+                        end else if (update_i.valid && ((update_i.is_1G && (i == update_i.vpn[17+`K:18])) || 
+                                                        (update_i.is_2M && (i == update_i.vpn[8+`K:9])) || 
+                                                        (!update_i.is_1G && !update_i.is_2M && (i == update_i.vpn[`K-1:0])))
+                                     && replace_en[i][j]) begin
                             // update tag array
                             tags_n[i][j] = '{
                                 asid:  update_i.asid,
-                                vpn2:  update_i.vpn [18+riscv::VPN2:18],
+                                vpn2:  update_i.vpn [26:18],
                                 vpn1:  update_i.vpn [17:9],
                                 vpn0:  update_i.vpn [8:0],
                                 is_1G: update_i.is_1G,
