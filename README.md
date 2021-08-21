@@ -6,13 +6,19 @@ More is to come, keep tuned! ;)
 General tasks:
 *   L2 TLB design (done);
 *   Integrating L2 TLB to MMU (done);
-*   Module level simulations (done);
+*   Module and MMU level simulations (done -> bugs fixed and stable results);
 *   Updating PTW (done);
 *   Updating Load Store Unit (LSU) (done);
-*   Updating Instruction Cache Interface (ongoing);
-*   Other core level changes; 
-*   Testbenching (ongoing);
+*   Updating Instruction Cache Interface (no need);
+*   Other core level changes (no need); 
+*   Testbenching (partially completed);
+*   Test in OpenPiton (done -> successful compilation of the "Hello, world!" program);
+
+Future taks to be completed:
 *   FSM based implementation of L2 TLB flush logic;
+*   SRAM implementation of the L2 TLB memory;
+*   Testing virtual memory performance with targeted benchmarks;
+*   Contribution to the Ariane;
 
 Useful links:
 *   GitHub page of the core: https://github.com/openhwgroup/cva6
